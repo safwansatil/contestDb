@@ -1,3 +1,51 @@
+# Document ignores
 exalidraw_dbms_proposal.excalidraw
 pitch.md
 Project Presentation.md
+
+# Environment config
+*.env
+.env
+
+# Python build and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+Venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE files
+.vscode/
+.idea/
+.project
+.pydevproject
+
+# OS files
+.DS_Store
+Thumbs.db

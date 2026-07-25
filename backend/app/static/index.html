@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ContestDB - Barebones Skeleton Dashboard</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        header {
+            border-bottom: 1px solid #334155;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        h1 {
+            margin: 0;
+            font-size: 24px;
+            color: #38bdf8;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .card {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 18px;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 8px;
+            color: #e2e8f0;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            color: #94a3b8;
+        }
+        select, textarea, input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            background-color: #0f172a;
+            border: 1px solid #475569;
+            color: #f8fafc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        textarea {
+            height: 100px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        button {
+            background-color: #0284c7;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #0369a1;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px;
+            border-bottom: 1px solid #334155;
+        }
+        th {
+            background-color: #0f172a;
+            color: #38bdf8;
+        }
+        .admin-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .admin-toggle input {
+            cursor: pointer;
+        }
+        .badge {
+            background-color: #0f172a;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            border: 1px solid #475569;
+        }
+        .logs {
+            background-color: #020617;
+            border: 1px solid #1e293b;
+            color: #4ade80;
+            font-family: monospace;
+            padding: 10px;
+            border-radius: 4px;
+            height: 120px;
+            overflow-y: auto;
+            font-size: 13px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>ContestDB: Walking Skeleton</h1>
+            <div>
+                <span class="badge">Engine: PostgreSQL (Neon)</span>
+            </div>
+        </header>
+
+        <div class="grid">
+            <!-- Left Panel: Ingest Submissions -->
+            <div class="card">
+                <h2>Submit Telemetry / Data</h2>
+                <div class="form-group">
+                    <label for="contest-select">Contest</label>
+                    <select id="contest-select" onchange="updatePayloadTemplate()">
+                        <option value="2">Contest 2: Accumulator Math Quiz (SUM strategy)</option>
+                        <option value="1">Contest 1: Max Speed Run (MAX strategy - Currently Frozen)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="user-select">User (Participant)</label>
+                    <select id="user-select">
+                        <option value="1">sayma (ID: 1)</option>
+                        <option value="2">nondiny (ID: 2)</option>
+                        <option value="3">satil (ID: 3)</option>
+                        <option value="4">tabib (ID: 4)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="payload-data">Submission Data (JSONB Payload)</label>
+                    <textarea id="payload-data">{"score": 90.0, "verdict": "ROUND_1_SUCCESS"}</textarea>
+                </div>
+                <button onclick="submitPayload()">Submit to Queue</button>
+            </div>
+
+            <!-- Right Panel: Dynamic Leaderboard -->
+            <div class="card">
+                <h2>Standings Leaderboard</h2>
+                <div class="admin-toggle">
+                    <input type="checkbox" id="as-admin-check" onchange="fetchLeaderboard()">
+                    <label for="as-admin-check">View Standings as Admin (Bypass Scoreboard Freeze)</label>
+                </div>
+                <table id="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Username</th>
+                            <th>Total Score</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-body">
+                        <!-- Filled dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="logs" id="log-feed">
+            [System Log] Started skeleton UI dashboard. Select options above to interact.
+        </div>
+    </div>
+
+    <script>
+        function log(message) {
+            const feed = document.getElementById("log-feed");
+            feed.innerHTML += "<br>> " + message;
+            feed.scrollTop = feed.scrollHeight;
+        }
+
+        function updatePayloadTemplate() {
+            const contestId = document.getElementById("contest-select").value;
+            const textarea = document.getElementById("payload-data");
+            if (contestId === "1") {
+                // Contest 1 is Max Speed Run (LFR run payload)
+                textarea.value = JSON.stringify({ "run_time_seconds": 38.5, "restarts": 0 }, null, 2);
+            } else {
+                // Contest 2 is Quiz (Score injection payload)
+                textarea.value = JSON.stringify({ "score": 95.0, "verdict": "ROUND_2_SUCCESS" }, null, 2);
+            }
+            fetchLeaderboard();
+        }
+
+        async function fetchLeaderboard() {
+            const contestId = document.getElementById("contest-select").value;
+            const asAdmin = document.getElementById("as-admin-check").checked;
+            
+            try {
+                const response = await fetch(`/contests/${contestId}/leaderboard?as_admin=${asAdmin}`);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.detail || "Failed to fetch leaderboard");
+                }
+
+                const tbody = document.getElementById("leaderboard-body");
+                tbody.innerHTML = "";
+
+                if (data.leaderboard.length === 0) {
+                    tbody.innerHTML = "<tr><td colspan='3' style='text-align:center; color:#64748b;'>No scores recorded yet</td></tr>";
+                    return;
+                }
+
+                data.leaderboard.forEach(row => {
+                    const tr = document.createElement("tr");
+                    tr.innerHTML = `
+                        <td><strong>${row.rank}</strong></td>
+                        <td>${row.username}</td>
+                        <td>${row.total_score.toFixed(2)}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                log("Error loading leaderboard: " + err.message);
+            }
+        }
+
+        async function submitPayload() {
+            const contestId = parseInt(document.getElementById("contest-select").value);
+            const userId = parseInt(document.getElementById("user-select").value);
+            const textareaVal = document.getElementById("payload-data").value;
+
+            let subData;
+            try {
+                subData = JSON.parse(textareaVal);
+            } catch (e) {
+                alert("Invalid JSON payload format!");
+                return;
+            }
+
+            log(`Sending submission for User #${userId} to Contest #${contestId}...`);
+
+            try {
+                const response = await fetch("/submissions", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        contest_id: contestId,
+                        user_id: userId,
+                        submission_data: subData
+                    })
+                });
+
+                const resData = await response.json();
+
+                if (response.status === 201) {
+                    log(`Success! Submission #${resData.submission_id} received. Queued at: ${resData.submitted_at}`);
+                    log("Worker will pick this up in 2 seconds...");
+                    // Reload leaderboard after a 3 second delay to let worker process it
+                    setTimeout(() => {
+                        fetchLeaderboard();
+                        log("Refreshed standings leaderboard.");
+                    }, 3000);
+                } else {
+                    log(`Failed: [Status ${response.status}] ${resData.detail || JSON.stringify(resData)}`);
+                }
+            } catch (err) {
+                log("Network error sending submission: " + err.message);
+            }
+        }
+
+        // Initialize dashboard
+        updatePayloadTemplate();
+    </script>
+</body>
+</html>
