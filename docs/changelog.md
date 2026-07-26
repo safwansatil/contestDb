@@ -6,6 +6,11 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.1.4] - 2026-07-26 (System Architecture & ERD Documentation)
+### Added
+* Created [docs/architecture_and_erd.md](docs/architecture_and_erd.md) containing the full Mermaid system flow architecture diagram and Entity Relationship Diagram (ERD) mapping users, contests, enrollments, and submissions.
+* Added mandatory documentation sync rules in [.agents/AGENTS.md](.agents/AGENTS.md) that require AI agents to update `docs/architecture_and_erd.md` whenever table schemas, database scripts, or system flows are updated.
+
 ## [0.1.3] - 2026-07-25 (Documentation Rigor & Dashboard Testing)
 ### Added
 * Expanded [docs/manual_testing.md](docs/manual_testing.md) to include a step-by-step walkthrough for evaluating the dynamic leaderboards and freeze logic using the barebones browser dashboard.

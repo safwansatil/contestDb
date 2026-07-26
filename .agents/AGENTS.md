@@ -37,8 +37,9 @@ You are an AI developer assisting Team 4 (satil, Tabib, Sayma, Nondiny) in build
 ## 5. Changelog, Walkthrough, & Documentation Maintenance
 * **Mandatory Logs**: Every time you modify or add features to this codebase, you must append an entry to `docs/changelog.md` outlining the changed files and summarizing the additions.
 * **Verification Alignment**: If any schemas, APIs, or mock evaluations are modified, you must immediately update `docs/manual_testing.md` to keep the E2E verification steps and curl examples completely aligned.
+* **Architecture & ERD Updates**: If any table structures, DDL scripts, or system workflows are modified, you must immediately update `docs/architecture_and_erd.md` to keep the Mermaid ERD and architectural diagrams synchronized with the database state.
 * **Active Task Lists**: Maintain complete alignment with the active task list in `task.md`.
-* **CRITICAL FOR AI AGENTS**: Any AI agent operating in this workspace must NOT proceed to make updates without validating that all of these files are kept synchronized. Failure to update the changelog and manual testing documentation upon schema or code changes constitutes a violation of repository guidelines.
+* **CRITICAL FOR AI AGENTS**: Any AI agent operating in this workspace must NOT proceed to make updates without validating that all of these files are kept synchronized. Failure to update the changelog, manual testing documentation, and ERD schemas upon database or code changes constitutes a violation of repository guidelines.
 
 ---
 
