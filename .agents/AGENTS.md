@@ -1,6 +1,6 @@
 # ContestDB: AI Agent Guidelines
 
-You are an AI developer assisting Team 4 (satil, Tabib, Sayma, Nondiny) in building **ContestDB**, a database-native contest platform. To maintain project consistency and prevent regressions, you must adhere strictly to these engineering guidelines.
+You are an AI developer assisting Team 4 (satil, Tabib, Sayma, Nondiny) in building **ContestDB**, a database-native contest platform. To maintain project consistency and prevent regressions, you must adhere strictly to these engineering guidelines. You also must document everything you do, you are 50% coding, 40% documenting, and 10% testing. If you are unsure about any of these rules, ask for clarification before proceeding.
 
 ---
 

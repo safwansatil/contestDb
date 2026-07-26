@@ -122,3 +122,33 @@ BEGIN
     END IF;
 END;
 $$ LANGUAGE plpgsql;
+
+-- 3. Function to Register a New User Natively
+CREATE OR REPLACE FUNCTION register_user(p_username VARCHAR, p_password VARCHAR)
+RETURNS TABLE (
+    user_id INT,
+    username VARCHAR,
+    created_at TIMESTAMP WITH TIME ZONE
+) AS $$
+BEGIN
+    RETURN QUERY
+    INSERT INTO users (username, password_hash)
+    VALUES (p_username, crypt(p_password, gen_salt('bf')))
+    RETURNING id, users.username, users.created_at;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 4. Function to Verify User Credentials Natively
+CREATE OR REPLACE FUNCTION verify_user_credentials(p_username VARCHAR, p_password VARCHAR)
+RETURNS TABLE (
+    user_id INT,
+    username VARCHAR
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT id, users.username
+    FROM users
+    WHERE users.username = p_username 
+      AND users.password_hash = crypt(p_password, users.password_hash);
+END;
+$$ LANGUAGE plpgsql;

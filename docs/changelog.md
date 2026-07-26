@@ -6,6 +6,21 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.2.0] - 2026-07-26 (Authentication & Registration Release)
+### Added
+* Created [docs/auth_architecture.md](docs/auth_architecture.md) detailing security trade-offs, PostgreSQL `pgcrypto` hashing, and JWT token management best practices.
+* Implemented native user registration and verification stored procedures `register_user` and `verify_user_credentials` inside `database/procedures.sql`.
+* Implemented endpoints `/auth/signup`, `/auth/login`, and `/auth/me` inside the API gateway at `backend/app/main.py`.
+* Added token verification, bearer authorization headers, and registration/login widgets inside `backend/app/static/index.html`.
+
+### Changed
+* Enabled `pgcrypto` extension and added `password_hash` column to the `users` table inside `database/init.sql`.
+* Updated seed scripts inside `database/seed.sql` to encrypt seed users (`sayma`, `nondiny`, `satil`, `tabib`) passwords natively using Bcrypt (`password123`).
+* Updated telemetry ingestion `/submissions` to extract identity natively from validated JWT bearer token instead of using the request payload body user ID.
+* Upgraded backend dependencies inside `backend/requirements.txt` to include `PyJWT`.
+* Revised manual verification scenarios and E2E curl requests inside [docs/manual_testing.md](docs/manual_testing.md).
+* Updated system architecture summaries and ERD flowcharts inside [docs/architecture_and_erd.md](docs/architecture_and_erd.md).
+
 ## [0.1.4] - 2026-07-26 (System Architecture & ERD Documentation)
 ### Added
 * Created [docs/architecture_and_erd.md](docs/architecture_and_erd.md) containing the full Mermaid system flow architecture diagram and Entity Relationship Diagram (ERD) mapping users, contests, enrollments, and submissions.

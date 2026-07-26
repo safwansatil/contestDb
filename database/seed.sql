@@ -5,11 +5,11 @@
 TRUNCATE TABLE submissions, enrollments, contests, users RESTART IDENTITY CASCADE;
 
 -- 1. Insert Users (Using Team Member Names, Sayma and Nondiny on top)
-INSERT INTO users (username) VALUES 
-('sayma'),   -- ID 1
-('nondiny'), -- ID 2
-('satil'),   -- ID 3
-('tabib');   -- ID 4
+INSERT INTO users (username, password_hash) VALUES 
+('sayma', crypt('password123', gen_salt('bf'))),   -- ID 1
+('nondiny', crypt('password123', gen_salt('bf'))), -- ID 2
+('satil', crypt('password123', gen_salt('bf'))),   -- ID 3
+('tabib', crypt('password123', gen_salt('bf')));   -- ID 4
 
 -- 2. Insert Contests
 -- Contest 1: "Max Speed Run" (Currently Frozen)

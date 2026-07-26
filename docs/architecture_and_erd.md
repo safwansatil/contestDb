@@ -22,9 +22,10 @@ graph TD
 ```
 
 ### Components Summary:
-1. **Client Interface**: A barebones static dashboard (`static/index.html`) served directly by the backend at `GET /`. It interacts with API endpoints to submit JSON payloads and view leaderboards.
-2. **FastAPI Gateway (`backend/app`)**: An asynchronous routing tier. Its primary role is to validate incoming inputs (such as verifying user enrollment before queueing a submission) and serialize parameters to and from PostgreSQL.
+1. **Client Interface**: A premium styled static dashboard (`static/index.html`) served directly by the backend at `GET /`. It handles authentication states (localStorage) and sends JWT authorization headers for submission actions.
+2. **FastAPI Gateway (`backend/app`)**: An asynchronous routing tier. Its primary role is to authenticate users, issue signed JWT tokens, validate incoming inputs (such as verifying user enrollment before queueing a submission), and serialize parameters to and from PostgreSQL.
 3. **PostgreSQL Database Engine (`database/`)**: The processing engine of the platform. It handles:
+   * **Authentication Hashing**: Compares credentials and registers users natively inside `verify_user_credentials` and `register_user` functions via `pgcrypto`.
    * **Queue State Locking**: Multiple concurrent workers call `claim_submission()` which utilizes `FOR UPDATE SKIP LOCKED` to lock rows atomically without race conditions.
    * **Real-time Standing Calculations**: Standings are calculated dynamically inside `get_leaderboard()` using SQL CTE aggregations, filtered by user visibility roles (applying the scoreboard freeze timestamps).
 4. **Judge Worker (`worker/`)**: A separate background script that acts as the evaluator black-box. It polls the database queue directly, performs evaluations on flexible JSONB payloads, and writes standardized scores/verdicts back.
@@ -40,6 +41,7 @@ erDiagram
     users {
         int id PK
         varchar username UK
+        varchar password_hash
         timestamp_with_tz created_at
     }
 
@@ -82,6 +84,7 @@ erDiagram
 #### `users`
 * `id` (SERIAL, PRIMARY KEY): Unique identifier.
 * `username` (VARCHAR(50), UNIQUE, NOT NULL): Name of the participant.
+* `password_hash` (VARCHAR(255), NOT NULL): Blowfish/bcrypt hash of user password.
 * `created_at` (TIMESTAMP WITH TIME ZONE, DEFAULT NOW()): Account creation timestamp.
 
 #### `contests`

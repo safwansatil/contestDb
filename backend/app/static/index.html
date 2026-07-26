@@ -3,208 +3,542 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ContestDB - Barebones Skeleton Dashboard</title>
+    <title>ContestDB - Premium Contest Dashboard</title>
+    <!-- Modern typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    
     <style>
+        :root {
+            --bg-color: #080c14;
+            --card-bg: rgba(17, 25, 40, 0.75);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --primary: #38bdf8;
+            --primary-hover: #0ea5e9;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-purple: #8b5cf6;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #0f172a;
-            color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.07) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.07) 0px, transparent 50%);
+            color: var(--text-primary);
             margin: 0;
             padding: 20px;
+            min-height: 100vh;
+            box-sizing: border-box;
         }
+
         .container {
-            max-width: 1000px;
+            max-width: 1100px;
             margin: 0 auto;
         }
+
         header {
-            border-bottom: 1px solid #334155;
-            padding-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .brand h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .brand-sub {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .user-status {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .btn-logout {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--accent-red);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            padding: 6px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .btn-logout:hover {
+            background: var(--accent-red);
+            color: white;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1.1fr 0.9fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 900px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 12px;
             margin-bottom: 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-        h1 {
-            margin: 0;
-            font-size: 24px;
-            color: #38bdf8;
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-        .card {
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            border-radius: 8px;
-            padding: 20px;
-        }
-        h2 {
-            margin-top: 0;
-            font-size: 18px;
-            border-bottom: 1px solid #334155;
-            padding-bottom: 8px;
-            color: #e2e8f0;
-        }
+
         .form-group {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
         }
+
         label {
             display: block;
-            margin-bottom: 5px;
-            font-size: 14px;
-            color: #94a3b8;
+            margin-bottom: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
-        select, textarea, input[type="text"] {
+
+        select, textarea, input {
             width: 100%;
-            padding: 8px;
-            background-color: #0f172a;
-            border: 1px solid #475569;
-            color: #f8fafc;
-            border-radius: 4px;
+            padding: 12px 16px;
+            background-color: rgba(8, 12, 20, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+            border-radius: 10px;
             box-sizing: border-box;
+            font-family: inherit;
+            font-size: 14px;
+            transition: all 0.2s ease;
         }
+
+        select:focus, textarea:focus, input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
+        }
+
         textarea {
-            height: 100px;
-            font-family: monospace;
+            height: 120px;
+            font-family: 'Fira Code', monospace;
+            font-size: 13px;
             resize: vertical;
         }
-        button {
-            background-color: #0284c7;
+
+        button.btn-primary {
+            background: linear-gradient(135deg, var(--primary), #3b82f6);
             color: white;
             border: none;
-            padding: 10px 15px;
-            border-radius: 4px;
+            padding: 12px 20px;
+            border-radius: 10px;
             cursor: pointer;
-            font-weight: bold;
+            font-weight: 600;
+            font-size: 14px;
             width: 100%;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
         }
-        button:hover {
-            background-color: #0369a1;
+
+        button.btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(56, 189, 248, 0.3);
         }
+
+        button.btn-primary:active {
+            transform: translateY(0);
+        }
+
+        /* Standings Table Styling */
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 10px;
         }
+
         th, td {
             text-align: left;
-            padding: 10px;
-            border-bottom: 1px solid #334155;
+            padding: 14px 16px;
         }
+
         th {
-            background-color: #0f172a;
-            color: #38bdf8;
+            background-color: rgba(8, 12, 20, 0.4);
+            color: var(--primary);
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
+
+        td {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+            font-size: 14px;
+        }
+
+        tr:hover td {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .rank-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            font-weight: 700;
+            font-size: 12px;
+        }
+
+        .rank-1 { background-color: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); }
+        .rank-2 { background-color: rgba(226, 232, 240, 0.15); color: #cbd5e1; border: 1px solid rgba(226, 232, 240, 0.3); }
+        .rank-3 { background-color: rgba(202, 138, 4, 0.15); color: #ca8a04; border: 1px solid rgba(202, 138, 4, 0.3); }
+        .rank-other { color: var(--text-secondary); }
+
         .admin-toggle {
             display: flex;
             align-items: center;
-            gap: 8px;
-            margin-bottom: 15px;
+            gap: 10px;
+            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.02);
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
-        .admin-toggle input {
+
+        .admin-toggle input[type="checkbox"] {
+            width: auto;
             cursor: pointer;
         }
-        .badge {
-            background-color: #0f172a;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            border: 1px solid #475569;
+
+        /* Auth Tabs UI */
+        .auth-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 10px;
         }
+
+        .auth-tab {
+            flex: 1;
+            text-align: center;
+            padding: 8px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 14px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .auth-tab.active {
+            background-color: rgba(56, 189, 248, 0.1);
+            color: var(--primary);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        /* Logger Feed */
+        .logs-container {
+            margin-top: 24px;
+        }
+
         .logs {
-            background-color: #020617;
-            border: 1px solid #1e293b;
-            color: #4ade80;
-            font-family: monospace;
-            padding: 10px;
-            border-radius: 4px;
-            height: 120px;
+            background-color: #030712;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            color: #10b981;
+            font-family: 'Fira Code', monospace;
+            padding: 16px;
+            border-radius: 12px;
+            height: 150px;
             overflow-y: auto;
             font-size: 13px;
-            margin-top: 20px;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8);
+        }
+
+        .log-row {
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+
+        .log-time {
+            color: var(--text-secondary);
+            font-size: 11px;
+            margin-right: 8px;
+        }
+
+        .log-err {
+            color: var(--accent-red);
+        }
+
+        .log-info {
+            color: var(--primary);
+        }
+        
+        .badge-info {
+            background-color: rgba(56, 189, 248, 0.1);
+            color: var(--primary);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            border: 1px solid rgba(56, 189, 248, 0.2);
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>ContestDB: Walking Skeleton</h1>
-            <div>
-                <span class="badge">Engine: PostgreSQL (Neon)</span>
+            <div class="brand">
+                <h1>ContestDB Gateway</h1>
+                <div class="brand-sub">PostgreSQL-Native Contest Processing System</div>
+            </div>
+            <div class="user-status" id="user-status-container">
+                <!-- Logged in status or empty -->
             </div>
         </header>
 
         <div class="grid">
-            <!-- Left Panel: Ingest Submissions -->
-            <div class="card">
-                <h2>Submit Telemetry / Data</h2>
-                <div class="form-group">
-                    <label for="contest-select">Contest</label>
-                    <select id="contest-select" onchange="updatePayloadTemplate()">
-                        <option value="2">Contest 2: Accumulator Math Quiz (SUM strategy)</option>
-                        <option value="1">Contest 1: Max Speed Run (MAX strategy - Currently Frozen)</option>
-                    </select>
+            <!-- Left Side: Auth / Submit Panel -->
+            <div class="left-panel">
+                <!-- Auth Widget (Shown when logged out) -->
+                <div class="card" id="auth-card">
+                    <div class="auth-tabs">
+                        <div class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Sign In</div>
+                        <div class="auth-tab" id="tab-signup" onclick="switchAuthTab('signup')">Sign Up</div>
+                    </div>
+                    
+                    <h2 id="auth-title">Welcome to ContestDB</h2>
+                    
+                    <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+                        <div class="form-group">
+                            <label for="auth-username">Username</label>
+                            <input type="text" id="auth-username" required placeholder="e.g. sayma">
+                        </div>
+                        <div class="form-group">
+                            <label for="auth-password">Password</label>
+                            <input type="password" id="auth-password" required placeholder="••••••••">
+                        </div>
+                        <button type="submit" class="btn-primary" id="auth-btn">Sign In</button>
+                    </form>
                 </div>
-                <div class="form-group">
-                    <label for="user-select">User (Participant)</label>
-                    <select id="user-select">
-                        <option value="1">sayma (ID: 1)</option>
-                        <option value="2">nondiny (ID: 2)</option>
-                        <option value="3">satil (ID: 3)</option>
-                        <option value="4">tabib (ID: 4)</option>
-                    </select>
+
+                <!-- Submission Widget (Shown when logged in) -->
+                <div class="card" id="submission-card" style="display: none;">
+                    <h2>Ingest Telemetry / Data <span class="badge-info">Enrolled Check</span></h2>
+                    
+                    <div class="form-group">
+                        <label for="contest-select">Target Contest</label>
+                        <select id="contest-select" onchange="updatePayloadTemplate()">
+                            <option value="2">Contest 2: Accumulator Math Quiz (SUM strategy)</option>
+                            <option value="1">Contest 1: Max Speed Run (MAX strategy - Frozen)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="payload-data">Submission Data (JSONB Payload)</label>
+                        <textarea id="payload-data">{"score": 90.0, "verdict": "ROUND_1_SUCCESS"}</textarea>
+                    </div>
+
+                    <button class="btn-primary" onclick="submitPayload()">Submit to Database Queue</button>
                 </div>
-                <div class="form-group">
-                    <label for="payload-data">Submission Data (JSONB Payload)</label>
-                    <textarea id="payload-data">{"score": 90.0, "verdict": "ROUND_1_SUCCESS"}</textarea>
-                </div>
-                <button onclick="submitPayload()">Submit to Queue</button>
             </div>
 
-            <!-- Right Panel: Dynamic Leaderboard -->
+            <!-- Right Side: Leaderboard -->
             <div class="card">
                 <h2>Standings Leaderboard</h2>
+                
                 <div class="admin-toggle">
                     <input type="checkbox" id="as-admin-check" onchange="fetchLeaderboard()">
-                    <label for="as-admin-check">View Standings as Admin (Bypass Scoreboard Freeze)</label>
+                    <label for="as-admin-check">View as Admin (Bypass Scoreboard Freeze)</label>
                 </div>
+
                 <table id="leaderboard-table">
                     <thead>
                         <tr>
-                            <th>Rank</th>
-                            <th>Username</th>
+                            <th style="width: 60px;">Rank</th>
+                            <th>Participant</th>
                             <th>Total Score</th>
                         </tr>
                     </thead>
                     <tbody id="leaderboard-body">
-                        <!-- Filled dynamically -->
+                        <!-- Loaded dynamically -->
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <div class="logs" id="log-feed">
-            [System Log] Started skeleton UI dashboard. Select options above to interact.
+        <div class="logs-container">
+            <div class="logs" id="log-feed">
+                <!-- Log feed row will be appended here -->
+            </div>
         </div>
     </div>
 
     <script>
-        function log(message) {
+        let currentAuthMode = 'login';
+        let authToken = localStorage.getItem('contestdb_token');
+        let currentUser = null;
+
+        function log(message, type = 'success') {
             const feed = document.getElementById("log-feed");
-            feed.innerHTML += "<br>> " + message;
+            const timeStr = new Date().toLocaleTimeString();
+            let typeClass = '';
+            if (type === 'error') typeClass = 'log-err';
+            if (type === 'info') typeClass = 'log-info';
+            
+            feed.innerHTML += `<div class="log-row"><span class="log-time">[${timeStr}]</span><span class="${typeClass}">&gt; ${message}</span></div>`;
             feed.scrollTop = feed.scrollHeight;
+        }
+
+        function switchAuthTab(mode) {
+            currentAuthMode = mode;
+            document.getElementById('tab-login').classList.toggle('active', mode === 'login');
+            document.getElementById('tab-signup').classList.toggle('active', mode === 'signup');
+            
+            document.getElementById('auth-title').innerText = mode === 'login' ? 'Sign In to Your Account' : 'Register a New Account';
+            document.getElementById('auth-btn').innerText = mode === 'login' ? 'Sign In' : 'Sign Up';
+        }
+
+        async function verifyToken() {
+            if (!authToken) {
+                showLoggedOut();
+                return;
+            }
+
+            try {
+                const response = await fetch('/auth/me', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                if (response.ok) {
+                    currentUser = await response.json();
+                    showLoggedIn();
+                    log(`Authenticated session verified for user: ${currentUser.username}`, 'info');
+                } else {
+                    localStorage.removeItem('contestdb_token');
+                    authToken = null;
+                    showLoggedOut();
+                    log('Session expired. Please log in again.', 'error');
+                }
+            } catch (err) {
+                log('Network error validating user session.', 'error');
+            }
+        }
+
+        // Display login view
+        function showLoggedIn() {
+            document.getElementById('auth-card').style.display = 'none';
+            document.getElementById('submission-card').style.display = 'block';
+            
+            document.getElementById('user-status-container').innerHTML = `
+                <span style="font-size: 14px; font-weight: 500;">
+                    Hello, <strong style="color:var(--primary); font-size:15px;">${currentUser.username}</strong>
+                </span>
+                <button class="btn-logout" onclick="handleLogout()">Sign Out</button>
+            `;
+            fetchLeaderboard();
+        }
+
+        // Display logout view
+        function showLoggedOut() {
+            document.getElementById('auth-card').style.display = 'block';
+            document.getElementById('submission-card').style.display = 'none';
+            document.getElementById('user-status-container').innerHTML = `
+                <span class="badge-info" style="background-color: rgba(239, 68, 68, 0.1); color: var(--accent-red); border: 1px solid rgba(239, 68, 68, 0.2);">Guest Mode</span>
+            `;
+            fetchLeaderboard();
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('contestdb_token');
+            authToken = null;
+            currentUser = null;
+            showLoggedOut();
+            log('Logged out of system successfully.');
+        }
+
+        async function handleAuthSubmit(event) {
+            event.preventDefault();
+            const usernameInput = document.getElementById('auth-username').value;
+            const passwordInput = document.getElementById('auth-password').value;
+            
+            const endpoint = currentAuthMode === 'login' ? '/auth/login' : '/auth/signup';
+            log(`${currentAuthMode === 'login' ? 'Authenticating' : 'Registering'} user '${usernameInput}'...`, 'info');
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: usernameInput, password: passwordInput })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    authToken = data.access_token;
+                    localStorage.setItem('contestdb_token', authToken);
+                    currentUser = data.user || { username: usernameInput };
+                    showLoggedIn();
+                    log(`Successfully logged in as ${currentUser.username}!`);
+                    
+                    // Clear forms
+                    document.getElementById('auth-username').value = '';
+                    document.getElementById('auth-password').value = '';
+                } else {
+                    log(`Auth failed: ${data.detail || JSON.stringify(data)}`, 'error');
+                }
+            } catch (err) {
+                log(`Error connecting to authentication endpoint: ${err.message}`, 'error');
+            }
         }
 
         function updatePayloadTemplate() {
             const contestId = document.getElementById("contest-select").value;
             const textarea = document.getElementById("payload-data");
             if (contestId === "1") {
-                // Contest 1 is Max Speed Run (LFR run payload)
                 textarea.value = JSON.stringify({ "run_time_seconds": 38.5, "restarts": 0 }, null, 2);
             } else {
-                // Contest 2 is Quiz (Score injection payload)
                 textarea.value = JSON.stringify({ "score": 95.0, "verdict": "ROUND_2_SUCCESS" }, null, 2);
             }
             fetchLeaderboard();
@@ -219,34 +553,44 @@
                 const data = await response.json();
                 
                 if (!response.ok) {
-                    throw new Error(data.detail || "Failed to fetch leaderboard");
+                    throw new Error(data.detail || "Failed to fetch standings");
                 }
 
                 const tbody = document.getElementById("leaderboard-body");
                 tbody.innerHTML = "";
 
                 if (data.leaderboard.length === 0) {
-                    tbody.innerHTML = "<tr><td colspan='3' style='text-align:center; color:#64748b;'>No scores recorded yet</td></tr>";
+                    tbody.innerHTML = "<tr><td colspan='3' style='text-align:center; color:var(--text-secondary);'>No scores recorded yet</td></tr>";
                     return;
                 }
 
                 data.leaderboard.forEach(row => {
                     const tr = document.createElement("tr");
+                    let rankClass = 'rank-other';
+                    let rankContent = row.rank;
+                    if (row.rank === 1) rankClass = 'rank-1';
+                    else if (row.rank === 2) rankClass = 'rank-2';
+                    else if (row.rank === 3) rankClass = 'rank-3';
+
                     tr.innerHTML = `
-                        <td><strong>${row.rank}</strong></td>
+                        <td><span class="rank-badge ${rankClass}">${rankContent}</span></td>
                         <td>${row.username}</td>
-                        <td>${row.total_score.toFixed(2)}</td>
+                        <td><strong style="color:var(--text-primary);">${row.total_score.toFixed(2)}</strong></td>
                     `;
                     tbody.appendChild(tr);
                 });
             } catch (err) {
-                log("Error loading leaderboard: " + err.message);
+                log("Error loading leaderboard: " + err.message, 'error');
             }
         }
 
         async function submitPayload() {
+            if (!authToken) {
+                log("Error: You must be logged in to submit payloads.", 'error');
+                return;
+            }
+
             const contestId = parseInt(document.getElementById("contest-select").value);
-            const userId = parseInt(document.getElementById("user-select").value);
             const textareaVal = document.getElementById("payload-data").value;
 
             let subData;
@@ -257,17 +601,17 @@
                 return;
             }
 
-            log(`Sending submission for User #${userId} to Contest #${contestId}...`);
+            log(`Submitting telemetries for contest #${contestId} in name of '${currentUser.username}'...`, 'info');
 
             try {
                 const response = await fetch("/submissions", {
                     method: "POST",
                     headers: {
-                        "Content-Type": "application/json"
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${authToken}`
                     },
                     body: JSON.stringify({
                         contest_id: contestId,
-                        user_id: userId,
                         submission_data: subData
                     })
                 });
@@ -276,21 +620,22 @@
 
                 if (response.status === 201) {
                     log(`Success! Submission #${resData.submission_id} received. Queued at: ${resData.submitted_at}`);
-                    log("Worker will pick this up in 2 seconds...");
-                    // Reload leaderboard after a 3 second delay to let worker process it
+                    log("Worker will process this soon. Refreshing standings in 3 seconds...", 'info');
                     setTimeout(() => {
                         fetchLeaderboard();
                         log("Refreshed standings leaderboard.");
                     }, 3000);
                 } else {
-                    log(`Failed: [Status ${response.status}] ${resData.detail || JSON.stringify(resData)}`);
+                    log(`Failed: [Status ${response.status}] ${resData.detail || JSON.stringify(resData)}`, 'error');
                 }
             } catch (err) {
-                log("Network error sending submission: " + err.message);
+                log("Network error sending submission: " + err.message, 'error');
             }
         }
 
         // Initialize dashboard
+        log("Started skeleton UI dashboard. Active & connected.");
+        verifyToken();
         updatePayloadTemplate();
     </script>
 </body>
