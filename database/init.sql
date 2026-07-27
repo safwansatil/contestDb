@@ -87,3 +87,6 @@ CREATE INDEX IF NOT EXISTS idx_submissions_queue ON submissions(submitted_at ASC
 CREATE INDEX IF NOT EXISTS idx_submissions_contest ON submissions(contest_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_user ON submissions(user_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_task ON submissions(task_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_user_time ON submissions(user_id, submitted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_submissions_contest_time ON submissions(contest_id, submitted_at DESC);
+

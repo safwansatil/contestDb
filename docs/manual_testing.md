@@ -21,7 +21,9 @@ Open two terminals on your machine:
    * **Windows (PowerShell)**: `.\venv\Scripts\Activate.ps1`
    * **Linux/macOS**: `source venv/bin/activate`
 4. Install requirements: `pip install -r requirements.txt`
-5. Start server: `uvicorn app.main:app --reload`
+5. Start server:
+   * **Windows**: `python run_server.py` (Applies selector event loop policy to prevent psycopg3 connection timeouts)
+   * **Linux/macOS**: `uvicorn app.main:app --reload`
 6. Confirm the console prints: `INFO:backend:Opening database connection pool...`
 
 ### Terminal 2: Start the Judge Worker
@@ -143,4 +145,41 @@ curl -X POST http://127.0.0.1:8000/contests/<contest_id>/members/role \
      }'
 ```
 *Expected Response:* Role updated success.
+
+---
+
+### 4. Profiles & Statistics APIs Verification (New Features)
+
+#### A. Fetch User Profile Statistics & Activity Graph
+Verify user statistics and activity dates:
+```bash
+curl -X GET http://127.0.0.1:8000/users/1/profile \
+     -H "Authorization: Bearer <sayma_access_token>"
+```
+*Expected Response:* Returns `user_id`, `username`, user metadata, consolidated statistics (contests, submissions, solved tasks count, averages, dynamic verdict breakdown), and activity dates list.
+
+#### B. Fetch User Histories
+Retrieve contest history and submission logs:
+```bash
+curl -X GET http://127.0.0.1:8000/users/1/history \
+     -H "Authorization: Bearer <sayma_access_token>"
+```
+*Expected Response:* Returns `contest_history` (with roles, score, and rank) and a list of the last 20 submissions.
+
+#### C. Fetch Contest Analytics & Timeline
+Get contest metrics:
+```bash
+curl -X GET http://127.0.0.1:8000/contests/1/statistics \
+     -H "Authorization: Bearer <sayma_access_token>"
+```
+*Expected Response:* Returns total participants, active participants count, total submissions, task-by-task averages, and the dynamic `date_bin` activity timeline buckets.
+
+#### D. Fetch Participant Score Growth Timeline
+Fetch score progression for a user in a contest:
+```bash
+curl -X GET http://127.0.0.1:8000/contests/1/progress/3 \
+     -H "Authorization: Bearer <sayma_access_token>"
+```
+*Expected Response:* Returns a chronological list of cumulative score growth after each submission during the contest.
+
 

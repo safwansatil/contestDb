@@ -1,10 +1,17 @@
 import os
+import sys
+import asyncio
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
 import json
 import jwt
+
+# Fix psycopg3 connection pool warning and error on Windows
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from fastapi import FastAPI, HTTPException, Query, status, Depends
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -663,3 +670,202 @@ async def get_contest_leaderboard(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=str(e)
                 )
+
+# User Profile & Activity Statistics Endpoints
+@app.get("/users/{user_id}/profile")
+async def get_user_profile(user_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Fetch user stats and activity graph data.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            # 1. Fetch user metadata
+            await cur.execute("SELECT username, created_at FROM users WHERE id = %s;", (user_id,))
+            user_row = await cur.fetchone()
+            if not user_row:
+                raise HTTPException(status_code=404, detail="User not found")
+            username, created_at = user_row
+
+            # 2. Fetch user stats
+            await cur.execute(
+                """
+                SELECT total_submissions, total_contests_joined, unique_tasks_attempted, 
+                       fully_completed_tasks, average_score, max_score_single, verdict_breakdown 
+                FROM get_user_profile_stats(%s);
+                """,
+                (user_id,)
+            )
+            stats_row = await cur.fetchone()
+            
+            stats = {}
+            if stats_row:
+                stats = {
+                    "total_submissions": stats_row[0],
+                    "total_contests_joined": stats_row[1],
+                    "unique_tasks_attempted": stats_row[2],
+                    "fully_completed_tasks": stats_row[3],
+                    "average_score": float(stats_row[4]) if stats_row[4] is not None else 0.0,
+                    "max_score_single": float(stats_row[5]) if stats_row[5] is not None else 0.0,
+                    "verdict_breakdown": stats_row[6]
+                }
+
+            # 3. Fetch activity graph
+            await cur.execute("SELECT activity_date, submission_count FROM get_user_activity_graph(%s);", (user_id,))
+            activity_rows = await cur.fetchall()
+            activity_graph = [{"date": str(r[0]), "count": r[1]} for r in activity_rows]
+
+            return {
+                "user_id": user_id,
+                "username": username,
+                "created_at": created_at,
+                "stats": stats,
+                "activity_graph": activity_graph
+            }
+
+@app.get("/users/{user_id}/history")
+async def get_user_history(user_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Fetch user contest history and recent submission history.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            # 1. Verify user exists
+            await cur.execute("SELECT 1 FROM users WHERE id = %s;", (user_id,))
+            if not await cur.fetchone():
+                raise HTTPException(status_code=404, detail="User not found")
+
+            # 2. Fetch contest history
+            await cur.execute(
+                """
+                SELECT contest_id, contest_title, role, registered_at, total_score, rank 
+                FROM get_user_contest_history(%s);
+                """, 
+                (user_id,)
+            )
+            contest_rows = await cur.fetchall()
+            contest_history = []
+            for r in contest_rows:
+                contest_history.append({
+                    "contest_id": r[0],
+                    "contest_title": r[1],
+                    "role": r[2],
+                    "registered_at": r[3],
+                    "total_score": float(r[4]) if r[4] is not None else None,
+                    "rank": r[5]
+                })
+
+            # 3. Fetch recent submissions
+            await cur.execute(
+                """
+                SELECT submission_id, contest_id, contest_title, task_id, task_title, score, verdict, submitted_at 
+                FROM get_user_submission_history(%s);
+                """, 
+                (user_id,)
+            )
+            sub_rows = await cur.fetchall()
+            submissions_history = []
+            for r in sub_rows:
+                submissions_history.append({
+                    "submission_id": r[0],
+                    "contest_id": r[1],
+                    "contest_title": r[2],
+                    "task_id": r[3],
+                    "task_title": r[4],
+                    "score": float(r[5]) if r[5] is not None else 0.0,
+                    "verdict": r[6],
+                    "submitted_at": r[7]
+                })
+
+            return {
+                "contest_history": contest_history,
+                "submissions_history": submissions_history
+            }
+
+# Contest Statistics & Timeline Endpoints
+@app.get("/contests/{contest_id}/statistics")
+async def get_contest_stats_api(
+    contest_id: int, 
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+):
+    """
+    Fetch contest-wide aggregated statistics, task stats, and timeline.
+    Bypasses freeze if viewed by a HOST or MODERATOR of that contest.
+    """
+    user_id = current_user["user_id"] if current_user else None
+    
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            # Determine if user is host or moderator of this contest
+            as_admin = False
+            if user_id:
+                await cur.execute(
+                    "SELECT role FROM enrollments WHERE contest_id = %s AND user_id = %s;",
+                    (contest_id, user_id)
+                )
+                role_row = await cur.fetchone()
+                if role_row and role_row[0] in ("HOST", "MODERATOR"):
+                    as_admin = True
+
+            try:
+                # 1. Fetch contest stats
+                await cur.execute(
+                    "SELECT total_participants, active_participants, total_submissions, task_stats FROM get_contest_statistics(%s, %s);",
+                    (contest_id, as_admin)
+                )
+                stats_row = await cur.fetchone()
+                if not stats_row:
+                    raise HTTPException(status_code=404, detail="Contest statistics not available")
+                
+                # 2. Fetch timeline
+                await cur.execute(
+                    "SELECT bucket_start, submission_count FROM get_contest_submission_timeline(%s, %s);",
+                    (contest_id, as_admin)
+                )
+                timeline_rows = await cur.fetchall()
+                timeline = [{"bucket_start": str(r[0]), "count": r[1]} for r in timeline_rows]
+
+                return {
+                    "contest_id": contest_id,
+                    "as_admin": as_admin,
+                    "total_participants": stats_row[0],
+                    "active_participants": stats_row[1],
+                    "total_submissions": stats_row[2],
+                    "task_statistics": stats_row[3],
+                    "submission_timeline": timeline
+                }
+            except Exception as e:
+                logger.error(f"Error fetching contest statistics: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/contests/{contest_id}/progress/{user_id}")
+async def get_participant_progress(
+    contest_id: int, 
+    user_id: int, 
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Fetch the cumulative score progression of a participant during a contest.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            # Verify participant is enrolled
+            await cur.execute(
+                "SELECT role FROM enrollments WHERE contest_id = %s AND user_id = %s;",
+                (contest_id, user_id)
+            )
+            enrolled = await cur.fetchone()
+            if not enrolled:
+                raise HTTPException(status_code=404, detail="User is not enrolled in this contest")
+
+            await cur.execute(
+                "SELECT submitted_at, running_score FROM get_participant_score_progression(%s, %s);",
+                (contest_id, user_id)
+            )
+            rows = await cur.fetchall()
+            progress = [{"submitted_at": r[0], "running_score": float(r[1])} for r in rows]
+            
+            return {
+                "contest_id": contest_id,
+                "user_id": user_id,
+                "progress": progress
+            }

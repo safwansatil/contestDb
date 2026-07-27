@@ -18,6 +18,7 @@ graph TD
         QueueTable[submissions Table]
         ClaimFunction[claim_submission Function]
         LeaderboardFunction[get_leaderboard Function]
+        StatsFunctions[get_user_profile_stats & get_contest_statistics Functions]
     end
 ```
 
@@ -144,3 +145,6 @@ erDiagram
 * `judged_at` (TIMESTAMP WITH TIME ZONE, NULLABLE)
 * `judged_by` (VARCHAR(50), NULLABLE): Name of the worker instance that compiled the submission.
 * *Constraints*: `chk_submission_status` checks that status is one of the four defined states.
+* *Indices*: 
+  - `idx_submissions_user_time` on `(user_id, submitted_at DESC)` (Optimizes user history timeline queries).
+  - `idx_submissions_contest_time` on `(contest_id, submitted_at DESC)` (Optimizes contest submission timeline charting).

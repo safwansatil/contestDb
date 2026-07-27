@@ -690,6 +690,95 @@
         </div>
     </div>
 
+    <!-- User Profile Modal -->
+    <div class="overlay" id="profile-modal">
+        <div class="modal" style="max-width: 600px; width: 95%;">
+            <h2 id="profile-modal-title" style="border-bottom:none; margin-bottom:4px;">User Profile</h2>
+            <p id="profile-modal-joined" style="color:var(--text-secondary); font-size:12px; margin-top:0; margin-bottom:16px;">Joined: ...</p>
+            
+            <!-- Profile stats cards -->
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px;">
+                <div style="background: rgba(255,255,255,0.02); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.04);">
+                    <div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase;">Submissions</div>
+                    <div id="profile-stat-submissions" style="font-size: 18px; font-weight: 800; color: var(--primary); margin-top: 4px;">0</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.02); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.04);">
+                    <div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase;">Contests</div>
+                    <div id="profile-stat-contests" style="font-size: 18px; font-weight: 800; color: var(--accent-purple); margin-top: 4px;">0</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.02); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.04);">
+                    <div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase;">Tasks Solved</div>
+                    <div id="profile-stat-solved" style="font-size: 18px; font-weight: 800; color: var(--accent-green); margin-top: 4px;">0</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.02); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.04);">
+                    <div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase;">Avg Score</div>
+                    <div id="profile-stat-avg" style="font-size: 18px; font-weight: 800; color: var(--accent-yellow); margin-top: 4px;">0</div>
+                </div>
+            </div>
+
+            <!-- Verdict Breakdown & Activity List -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+                <div>
+                    <h3 style="font-size: 12px; text-transform: uppercase; color: var(--text-secondary); margin-top: 0; margin-bottom: 8px;">Verdict Counts</h3>
+                    <div id="profile-verdicts-list" style="display: flex; flex-direction: column; gap: 6px; font-size: 12px; max-height: 120px; overflow-y: auto;">
+                        <!-- Verdicts list -->
+                    </div>
+                </div>
+                <div>
+                    <h3 style="font-size: 12px; text-transform: uppercase; color: var(--text-secondary); margin-top: 0; margin-bottom: 8px;">Submission Timeline (Active Days)</h3>
+                    <div id="profile-activity-list" style="display: flex; flex-direction: column; gap: 6px; font-size: 12px; max-height: 120px; overflow-y: auto; font-family: 'Fira Code', monospace;">
+                        <!-- Dates and counts -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- History Tabs -->
+            <div style="display: flex; gap: 10px; margin-bottom: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 8px;">
+                <div class="auth-tab active" id="tab-profile-history-contests" style="padding: 4px; font-size: 12px;" onclick="switchProfileHistoryTab('contests')">Contest History</div>
+                <div class="auth-tab" id="tab-profile-history-submissions" style="padding: 4px; font-size: 12px;" onclick="switchProfileHistoryTab('submissions')">Submissions</div>
+            </div>
+
+            <!-- Contest History Panel -->
+            <div id="profile-history-contests-panel" style="max-height: 150px; overflow-y: auto; font-size: 12.5px; margin-bottom: 20px;">
+                <table style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>Contest</th>
+                            <th>Role</th>
+                            <th>Rank</th>
+                            <th style="text-align: right;">Total Score</th>
+                        </tr>
+                    </thead>
+                    <tbody id="profile-history-contests-body">
+                        <!-- Loaded dynamically -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Submissions History Panel (hidden by default) -->
+            <div id="profile-history-submissions-panel" style="max-height: 150px; overflow-y: auto; font-size: 12.5px; margin-bottom: 20px; display: none;">
+                <table style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>Contest</th>
+                            <th>Task</th>
+                            <th>Score</th>
+                            <th>Verdict</th>
+                            <th style="text-align: right;">Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="profile-history-submissions-body">
+                        <!-- Loaded dynamically -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="text-align: right;">
+                <button class="btn btn-secondary" onclick="closeUserProfileModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentAuthMode = 'login';
         let authToken = localStorage.getItem('contestdb_token');
@@ -933,9 +1022,59 @@
                 </div>
                 ${actionButtons}
                 
-                <h3 style="margin-top:20px; font-size:14px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:6px;">Tasks in this Contest</h3>
-                <div class="task-list" id="tasks-list-panel">
-                    <p style="color:var(--text-secondary); font-size:12.5px;">Loading tasks...</p>
+                <!-- Contest Sub-Tabs -->
+                <div style="display: flex; gap: 10px; margin-top: 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 8px;">
+                    <div class="auth-tab active" id="tab-contest-tasks" style="padding: 6px; font-size: 12px; flex:1; text-align:center;" onclick="switchContestTab('tasks')">Contest Tasks</div>
+                    <div class="auth-tab" id="tab-contest-stats" style="padding: 6px; font-size: 12px; flex:1; text-align:center;" onclick="switchContestTab('stats')">Analytics & Stats</div>
+                </div>
+
+                <!-- Tasks Tab Panel -->
+                <div id="contest-tasks-panel">
+                    <h3 style="margin-top:20px; font-size:14px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:6px;">Tasks in this Contest</h3>
+                    <div class="task-list" id="tasks-list-panel">
+                        <p style="color:var(--text-secondary); font-size:12.5px;">Loading tasks...</p>
+                    </div>
+                </div>
+
+                <!-- Statistics Tab Panel -->
+                <div id="contest-stats-panel" style="display:none; margin-top:20px;">
+                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px;">
+                        <div style="background: rgba(255,255,255,0.02); padding: 8px; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.04);">
+                            <div style="font-size: 9px; color: var(--text-secondary); text-transform: uppercase;">Participants</div>
+                            <div id="c-stat-participants" style="font-size: 16px; font-weight: 800; color: var(--primary); margin-top: 4px;">0</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.02); padding: 8px; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.04);">
+                            <div style="font-size: 9px; color: var(--text-secondary); text-transform: uppercase;">Active Users</div>
+                            <div id="c-stat-active" style="font-size: 16px; font-weight: 800; color: var(--accent-purple); margin-top: 4px;">0</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.02); padding: 8px; border-radius: 8px; text-align: center; border: 1px solid rgba(255,255,255,0.04);">
+                            <div style="font-size: 9px; color: var(--text-secondary); text-transform: uppercase;">Submissions</div>
+                            <div id="c-stat-submissions" style="font-size: 16px; font-weight: 800; color: var(--accent-green); margin-top: 4px;">0</div>
+                        </div>
+                    </div>
+
+                    <h4 style="font-size:12px; text-transform:uppercase; color:var(--text-secondary); margin-bottom: 8px;">Task Metrics</h4>
+                    <div style="overflow-x:auto; margin-bottom: 20px;">
+                        <table style="width:100%; font-size:12px;">
+                            <thead>
+                                <tr>
+                                    <th>Task</th>
+                                    <th>Avg Score</th>
+                                    <th>Max Score</th>
+                                    <th>Attempts</th>
+                                    <th>Solved</th>
+                                </tr>
+                            </thead>
+                            <tbody id="c-task-stats-body">
+                                <tr><td colspan="5" style="text-align:center; color:var(--text-secondary);">Loading metrics...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h4 style="font-size:12px; text-transform:uppercase; color:var(--text-secondary); margin-bottom: 8px;">Submission Timeline Grid</h4>
+                    <div id="c-timeline-container" style="display:flex; flex-direction:column; gap:6px; background:rgba(0,0,0,0.2); padding:10px; border-radius:8px; max-height: 150px; overflow-y:auto; font-family: 'Fira Code', monospace; font-size:11px;">
+                        <!-- Timeline buckets -->
+                    </div>
                 </div>
             `;
 
@@ -1230,7 +1369,7 @@
 
                     tr.innerHTML = `
                         <td><span class="rank-badge ${rankClass}">${rankContent}</span></td>
-                        <td>${row.username}</td>
+                        <td><span style="color:var(--primary); cursor:pointer; font-weight:600; text-decoration:underline;" onclick="openUserProfile(${row.user_id})">${row.username}</span></td>
                         <td style="text-align: right;"><strong style="color:var(--text-primary);">${row.total_score.toFixed(2)}</strong></td>
                     `;
                     tbody.appendChild(tr);
@@ -1324,7 +1463,7 @@
                     row.style = 'display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.01); padding:6px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.03);';
                     
                     row.innerHTML = `
-                        <span>${member.username}</span>
+                        <span style="color:var(--primary); cursor:pointer; font-weight:600; text-decoration:underline;" onclick="openUserProfile(${member.user_id})">${member.username}</span>
                         <span class="badge ${member.role === 'HOST' ? 'badge-role' : member.role === 'MODERATOR' ? 'badge-active' : 'badge-pending'}" style="margin-left:auto; margin-right:10px;">${member.role}</span>
                     `;
                     list.appendChild(row);
@@ -1381,6 +1520,240 @@
                 }
             } catch (err) {
                 log('Network error updating role: ' + err.message, 'error');
+            }
+        }
+
+        // Contest Analytics Sub-Tabs Logic
+        function switchContestTab(tabName) {
+            document.getElementById('tab-contest-tasks').classList.toggle('active', tabName === 'tasks');
+            document.getElementById('tab-contest-stats').classList.toggle('active', tabName === 'stats');
+            document.getElementById('contest-tasks-panel').style.display = tabName === 'tasks' ? 'block' : 'none';
+            document.getElementById('contest-stats-panel').style.display = tabName === 'stats' ? 'block' : 'none';
+            if (tabName === 'stats') {
+                fetchContestStats();
+            }
+        }
+
+        async function fetchContestStats() {
+            if (!selectedContestId) return;
+            try {
+                const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+                const response = await fetch(`/contests/${selectedContestId}/statistics`, { headers });
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.detail || "Failed to fetch stats");
+                
+                document.getElementById('c-stat-participants').innerText = data.total_participants;
+                document.getElementById('c-stat-active').innerText = data.active_participants;
+                document.getElementById('c-stat-submissions').innerText = data.total_submissions;
+                
+                const taskBody = document.getElementById('c-task-stats-body');
+                taskBody.innerHTML = '';
+                
+                if (data.task_statistics.length === 0) {
+                    taskBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-secondary);">No tasks created yet</td></tr>';
+                } else {
+                    data.task_statistics.forEach(t => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td><strong>${t.task_title}</strong></td>
+                            <td>${t.avg_score.toFixed(2)}</td>
+                            <td>${t.max_score_achieved.toFixed(2)} / ${t.max_score}</td>
+                            <td>${t.total_attempts}</td>
+                            <td><span style="color:var(--accent-green); font-weight:600;">${t.solved_users}</span></td>
+                        `;
+                        taskBody.appendChild(tr);
+                    });
+                }
+                
+                const timelineCont = document.getElementById('c-timeline-container');
+                timelineCont.innerHTML = '';
+                
+                if (data.submission_timeline.length === 0) {
+                    timelineCont.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:10px 0;">No submissions recorded yet</div>';
+                } else {
+                    const maxCount = Math.max(...data.submission_timeline.map(x => x.count), 1);
+                    data.submission_timeline.forEach(bucket => {
+                        const timeStr = new Date(bucket.bucket_start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                        const dateStr = new Date(bucket.bucket_start).toLocaleDateString([], {month: 'short', day: 'numeric'});
+                        const pct = (bucket.count / maxCount) * 100;
+                        
+                        const div = document.createElement('div');
+                        div.style = 'display:flex; align-items:center; gap:10px; margin-bottom:4px;';
+                        div.innerHTML = `
+                            <span style="width:110px; color:var(--text-secondary); flex-shrink:0;">${dateStr} ${timeStr}</span>
+                            <div style="flex-grow:1; background:rgba(255,255,255,0.05); height:14px; border-radius:4px; overflow:hidden;">
+                                <div style="background:var(--primary); width:${pct}%; height:100%; transition:width 0.5s ease;"></div>
+                            </div>
+                            <span style="width:30px; font-weight:bold; text-align:right;">${bucket.count}</span>
+                        `;
+                        timelineCont.appendChild(div);
+                    });
+                }
+            } catch (err) {
+                log('Error fetching contest stats: ' + err.message, 'error');
+            }
+        }
+
+        // User Profile & Statistics Modal Logic
+        let activeProfileHistoryTab = 'contests';
+        let currentViewedProfileId = null;
+
+        function switchProfileHistoryTab(tabName) {
+            activeProfileHistoryTab = tabName;
+            document.getElementById('tab-profile-history-contests').classList.toggle('active', tabName === 'contests');
+            document.getElementById('tab-profile-history-submissions').classList.toggle('active', tabName === 'submissions');
+            document.getElementById('profile-history-contests-panel').style.display = tabName === 'contests' ? 'block' : 'none';
+            document.getElementById('profile-history-submissions-panel').style.display = tabName === 'submissions' ? 'block' : 'none';
+        }
+
+        function closeUserProfileModal() {
+            document.getElementById('profile-modal').style.display = 'none';
+        }
+
+        async function openUserProfile(userId) {
+            currentViewedProfileId = userId;
+            switchProfileHistoryTab('contests');
+            
+            document.getElementById('profile-modal').style.display = 'flex';
+            document.getElementById('profile-modal-title').innerText = 'Loading Profile...';
+            document.getElementById('profile-modal-joined').innerText = '';
+            
+            document.getElementById('profile-stat-submissions').innerText = '...';
+            document.getElementById('profile-stat-contests').innerText = '...';
+            document.getElementById('profile-stat-solved').innerText = '...';
+            document.getElementById('profile-stat-avg').innerText = '...';
+            
+            document.getElementById('profile-verdicts-list').innerHTML = 'Loading verdicts...';
+            document.getElementById('profile-activity-list').innerHTML = 'Loading activity...';
+            document.getElementById('profile-history-contests-body').innerHTML = '<tr><td colspan="4" style="text-align:center;">Loading...</td></tr>';
+            document.getElementById('profile-history-submissions-body').innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading...</td></tr>';
+
+            if (!authToken) {
+                log('Error: You must be logged in to view profiles.', 'error');
+                closeUserProfileModal();
+                return;
+            }
+
+            try {
+                // 1. Fetch user profile and stats
+                const profileRes = await fetch(`/users/${userId}/profile`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const profile = await profileRes.json();
+                if (!profileRes.ok) throw new Error(profile.detail || "Failed to load user profile");
+
+                document.getElementById('profile-modal-title').innerText = `User Profile: ${profile.username}`;
+                const joinedDate = new Date(profile.created_at).toLocaleDateString([], {year: 'numeric', month: 'long', day: 'numeric'});
+                document.getElementById('profile-modal-joined').innerText = `Member Since: ${joinedDate}`;
+
+                const s = profile.stats;
+                document.getElementById('profile-stat-submissions').innerText = s.total_submissions || 0;
+                document.getElementById('profile-stat-contests').innerText = s.total_contests_joined || 0;
+                document.getElementById('profile-stat-solved').innerText = s.fully_completed_tasks || 0;
+                document.getElementById('profile-stat-avg').innerText = s.average_score ? s.average_score.toFixed(1) : '0.0';
+
+                // Verdict breakdown list
+                const verdictList = document.getElementById('profile-verdicts-list');
+                verdictList.innerHTML = '';
+                const verdicts = s.verdict_breakdown || {};
+                const verdictKeys = Object.keys(verdicts);
+                
+                if (verdictKeys.length === 0) {
+                    verdictList.innerHTML = '<div style="color:var(--text-secondary); padding: 5px;">No verdicts recorded</div>';
+                } else {
+                    verdictKeys.forEach(v => {
+                        const cnt = verdicts[v];
+                        const row = document.createElement('div');
+                        row.style = 'display:flex; justify-content:space-between; background:rgba(255,255,255,0.01); padding:4px 8px; border-radius:4px;';
+                        
+                        let badgeColor = 'var(--text-primary)';
+                        if (v === 'ACCEPTED' || v === 'AC' || v === 'RUN_SUCCESS') badgeColor = 'var(--accent-green)';
+                        else if (v === 'WRONG_ANSWER' || v === 'WA') badgeColor = 'var(--accent-red)';
+                        else if (v === 'COMPILE_ERROR') badgeColor = 'var(--accent-yellow)';
+
+                        row.innerHTML = `<span style="color:${badgeColor}; font-weight:600;">${v}</span><span>${cnt}</span>`;
+                        verdictList.appendChild(row);
+                    });
+                }
+
+                // Activity list
+                const activityList = document.getElementById('profile-activity-list');
+                activityList.innerHTML = '';
+                const acts = profile.activity_graph || [];
+                
+                if (acts.length === 0) {
+                    activityList.innerHTML = '<div style="color:var(--text-secondary); padding: 5px;">No daily activity recorded</div>';
+                } else {
+                    acts.slice(-30).reverse().forEach(a => {
+                        const row = document.createElement('div');
+                        row.style = 'display:flex; justify-content:space-between; background:rgba(255,255,255,0.01); padding:4px 8px; border-radius:4px;';
+                        row.innerHTML = `<span style="color:var(--text-secondary);">${a.date}</span><strong>${a.count} submission${a.count > 1 ? 's' : ''}</strong>`;
+                        activityList.appendChild(row);
+                    });
+                }
+
+                // 2. Fetch user histories
+                const historyRes = await fetch(`/users/${userId}/history`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const history = await historyRes.json();
+                if (!historyRes.ok) throw new Error(history.detail || "Failed to load user history");
+
+                // Populate contests history table
+                const contestBody = document.getElementById('profile-history-contests-body');
+                contestBody.innerHTML = '';
+                const cHist = history.contest_history || [];
+                
+                if (cHist.length === 0) {
+                    contestBody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-secondary); padding: 10px;">Never joined any contests</td></tr>';
+                } else {
+                    cHist.forEach(c => {
+                        const tr = document.createElement('tr');
+                        const scoreDisplay = c.total_score !== null ? c.total_score.toFixed(1) : 'N/A';
+                        const rankDisplay = c.rank !== null ? `#${c.rank}` : 'N/A';
+                        const roleBadge = `<span class="badge ${c.role === 'HOST' ? 'badge-role' : c.role === 'MODERATOR' ? 'badge-active' : 'badge-pending'}">${c.role}</span>`;
+                        
+                        tr.innerHTML = `
+                            <td><strong>${c.contest_title}</strong></td>
+                            <td>${roleBadge}</td>
+                            <td>${rankDisplay}</td>
+                            <td style="text-align:right; font-weight:bold;">${scoreDisplay}</td>
+                        `;
+                        contestBody.appendChild(tr);
+                    });
+                }
+
+                // Populate submissions history table
+                const subBody = document.getElementById('profile-history-submissions-body');
+                subBody.innerHTML = '';
+                const sHist = history.submissions_history || [];
+                
+                if (sHist.length === 0) {
+                    subBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-secondary); padding: 10px;">No submissions made</td></tr>';
+                } else {
+                    sHist.forEach(sub => {
+                        const tr = document.createElement('tr');
+                        const subDate = new Date(sub.submitted_at).toLocaleDateString([], {month: 'short', day: 'numeric'});
+                        
+                        let badgeColor = 'var(--text-secondary)';
+                        if (sub.verdict === 'ACCEPTED' || sub.verdict === 'AC' || sub.verdict === 'RUN_SUCCESS') badgeColor = 'var(--accent-green)';
+                        else if (sub.verdict === 'WRONG_ANSWER' || sub.verdict === 'WA') badgeColor = 'var(--accent-red)';
+
+                        tr.innerHTML = `
+                            <td>${sub.contest_title}</td>
+                            <td>${sub.task_title || 'General'}</td>
+                            <td style="font-weight:bold;">${sub.score.toFixed(1)}</td>
+                            <td><span style="color:${badgeColor}; font-weight:600; font-size:11px;">${sub.verdict}</span></td>
+                            <td style="text-align:right; color:var(--text-secondary);">${subDate}</td>
+                        `;
+                        subBody.appendChild(tr);
+                    });
+                }
+
+            } catch (err) {
+                log('Error loading profile details: ' + err.message, 'error');
+                closeUserProfileModal();
             }
         }
 
