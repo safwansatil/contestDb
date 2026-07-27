@@ -34,7 +34,7 @@ graph TD
 
 ## 2. Entity Relationship Diagram (ERD)
 
-The database schema is designed to be highly generic and contest-agnostic, storing custom contest payloads in a flexible `JSONB` column.
+The database schema is designed to be highly generic and contest-agnostic, storing custom contest payloads in a flexible `JSONB` column, and managing contest roles and individual tasks natively in the database.
 
 ```mermaid
 erDiagram
@@ -52,18 +52,32 @@ erDiagram
         timestamp_with_tz start_time
         timestamp_with_tz freeze_time
         timestamp_with_tz end_time
+        varchar status
+        text judging_description
+        varchar invitation_code
     }
 
     enrollments {
         int contest_id PK,FK
         int user_id PK,FK
         timestamp_with_tz registered_at
+        varchar role
+    }
+
+    tasks {
+        int id PK
+        int contest_id FK
+        varchar title
+        text description
+        numeric max_score
+        timestamp_with_tz created_at
     }
 
     submissions {
         int id PK
         int contest_id FK
         int user_id FK
+        int task_id FK
         jsonb submission_data
         varchar status
         numeric score
@@ -77,6 +91,8 @@ erDiagram
     contests ||--o{ enrollments : "enrolls"
     users ||--o{ submissions : "submits"
     contests ||--o{ submissions : "contains"
+    contests ||--o{ tasks : "contains"
+    tasks ||--o{ submissions : "receives"
 ```
 
 ### Tables Specification:
@@ -94,18 +110,32 @@ erDiagram
 * `start_time` (TIMESTAMP WITH TIME ZONE, NOT NULL): Contest launch.
 * `freeze_time` (TIMESTAMP WITH TIME ZONE, NOT NULL): Standing freeze timestamp (public users will not see submissions made after this point).
 * `end_time` (TIMESTAMP WITH TIME ZONE, NOT NULL): Contest closure.
-* *Constraints*: `chk_contest_times` checks that `freeze_time >= start_time AND end_time >= freeze_time`.
+* `status` (VARCHAR(30), DEFAULT 'PENDING_APPROVAL', NOT NULL): Approval status (`'PENDING_APPROVAL'`, `'ACTIVE'`, `'COMPLETED'`).
+* `judging_description` (TEXT): Description of the scoring and judging logic for the contest developer.
+* `invitation_code` (VARCHAR(50), NULLABLE): Invitation code needed to register for private contests.
+* *Constraints*: `chk_contest_times` checks that `freeze_time >= start_time AND end_time >= freeze_time`, and `chk_contest_status` validates status values.
 
 #### `enrollments`
 * `contest_id` (INT, FOREIGN KEY, REFERENCES contests(id) ON DELETE CASCADE)
 * `user_id` (INT, FOREIGN KEY, REFERENCES users(id) ON DELETE CASCADE)
 * `registered_at` (TIMESTAMP WITH TIME ZONE, DEFAULT NOW())
+* `role` (VARCHAR(20), DEFAULT 'PARTICIPANT', NOT NULL): User role (`'HOST'`, `'MODERATOR'`, `'PARTICIPANT'`).
 * *PrimaryKey*: Combined key `(contest_id, user_id)`.
+* *Constraints*: `chk_enrollment_role` restricts roles to HOST, MODERATOR, or PARTICIPANT.
+
+#### `tasks`
+* `id` (SERIAL, PRIMARY KEY): Unique task/problem identifier.
+* `contest_id` (INT, FOREIGN KEY, REFERENCES contests(id) ON DELETE CASCADE)
+* `title` (VARCHAR(100), NOT NULL): Task name.
+* `description` (TEXT, NOT NULL): Details/parameters of the task.
+* `max_score` (NUMERIC, DEFAULT 100): Maximum score obtainable.
+* `created_at` (TIMESTAMP WITH TIME ZONE, DEFAULT NOW())
 
 #### `submissions`
 * `id` (SERIAL, PRIMARY KEY): Unique identifier.
 * `contest_id` (INT, FOREIGN KEY, REFERENCES contests(id) ON DELETE CASCADE)
 * `user_id` (INT, FOREIGN KEY, REFERENCES users(id) ON DELETE CASCADE)
+* `task_id` (INT, FOREIGN KEY, REFERENCES tasks(id) ON DELETE CASCADE)
 * `submission_data` (JSONB, NOT NULL): Holds flexible inputs (e.g. LFR run parameters, chess moves, source code metadata).
 * `status` (VARCHAR(20), DEFAULT 'PENDING', NOT NULL): Processing state (`'PENDING'`, `'JUDGING'`, `'COMPLETED'`, `'FAILED'`).
 * `score` (NUMERIC, DEFAULT 0, NOT NULL): Standardized score output written back by the worker.

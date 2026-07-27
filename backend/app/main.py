@@ -22,7 +22,7 @@ JWT_SECRET = os.getenv("JWT_SECRET", "contestdb_jwt_secret_key_change_me_in_prod
 JWT_ALGORITHM = "HS256"
 TOKEN_EXPIRE_MINUTES = 1440  # 24 Hours
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 def create_access_token(user_id: int, username: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
@@ -56,6 +56,15 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
             detail=f"Could not validate credentials: {str(e)}"
         )
 
+async def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> Optional[Dict[str, Any]]:
+    if not credentials:
+        return None
+    try:
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return {"user_id": int(payload.get("sub")), "username": payload.get("username")}
+    except jwt.PyJWTError:
+        return None
+
 # Pydantic Schemas for validation
 class AuthRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, description="Username (alphanumeric, underscores, hyphens)")
@@ -71,8 +80,37 @@ class AuthRequest(BaseModel):
 
 class SubmissionRequest(BaseModel):
     contest_id: int = Field(..., description="ID of the contest")
+    task_id: Optional[int] = Field(None, description="ID of the task")
     user_id: Optional[int] = Field(None, description="Deprecated, user ID is resolved from authenticated token")
     submission_data: Dict[str, Any] = Field(..., description="Arbitrary JSONB data representing the submission details")
+
+class ContestCreateRequest(BaseModel):
+    title: str = Field(..., min_length=3, max_length=100)
+    ranking_strategy: str = Field(..., max_length=30, description="Strategy, e.g., SUM, MAX, ICPC, or Custom")
+    start_time: datetime
+    freeze_time: datetime
+    end_time: datetime
+    invitation_code: Optional[str] = Field(None, max_length=50)
+    judging_description: str = Field(..., min_length=5)
+
+class TaskCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=100)
+    description: str = Field(..., min_length=1)
+    max_score: float = Field(100.0, ge=0.0)
+
+class EnrollRequest(BaseModel):
+    invitation_code: Optional[str] = None
+
+class RoleUpdateRequest(BaseModel):
+    target_user_id: int
+    new_role: str
+
+    @field_validator("new_role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        if v not in ("HOST", "MODERATOR", "PARTICIPANT"):
+            raise ValueError("Role must be HOST, MODERATOR, or PARTICIPANT")
+        return v
 
 # Lifecycle Event Handlers
 @app.on_event("startup")
@@ -172,7 +210,349 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
         "username": current_user["username"]
     }
 
-# API Endpoints
+# Contest Endpoints
+@app.get("/contests")
+async def get_contests(current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)):
+    """
+    Fetch all contests. If authenticated, return the user's role.
+    Only return invitation codes to HOST or MODERATOR users.
+    """
+    user_id = current_user["user_id"] if current_user else None
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT c.id, c.title, c.ranking_strategy, c.start_time, c.freeze_time, c.end_time, 
+                       c.status, c.judging_description, c.invitation_code, e.role
+                FROM contests c
+                LEFT JOIN enrollments e ON c.id = e.contest_id AND e.user_id = %s
+                ORDER BY c.id DESC;
+                """,
+                (user_id,)
+            )
+            rows = await cur.fetchall()
+            contests = []
+            for row in rows:
+                c_id, title, ranking, start, freeze, end, status, judging_desc, inv_code, role = row
+                has_code = inv_code is not None and inv_code != ""
+                show_code = role in ("HOST", "MODERATOR")
+                
+                contests.append({
+                    "id": c_id,
+                    "title": title,
+                    "ranking_strategy": ranking,
+                    "start_time": start,
+                    "freeze_time": freeze,
+                    "end_time": end,
+                    "status": status,
+                    "judging_description": judging_desc,
+                    "requires_invitation_code": has_code,
+                    "invitation_code": inv_code if show_code else None,
+                    "user_role": role
+                })
+            return contests
+
+@app.get("/contests/{contest_id}")
+async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)):
+    """
+    Fetch single contest details.
+    """
+    user_id = current_user["user_id"] if current_user else None
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT c.id, c.title, c.ranking_strategy, c.start_time, c.freeze_time, c.end_time, 
+                       c.status, c.judging_description, c.invitation_code, e.role
+                FROM contests c
+                LEFT JOIN enrollments e ON c.id = e.contest_id AND e.user_id = %s
+                WHERE c.id = %s;
+                """,
+                (user_id, contest_id)
+            )
+            row = await cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Contest not found")
+            
+            c_id, title, ranking, start, freeze, end, status, judging_desc, inv_code, role = row
+            has_code = inv_code is not None and inv_code != ""
+            show_code = role in ("HOST", "MODERATOR")
+            
+            return {
+                "id": c_id,
+                "title": title,
+                "ranking_strategy": ranking,
+                "start_time": start,
+                "freeze_time": freeze,
+                "end_time": end,
+                "status": status,
+                "judging_description": judging_desc,
+                "requires_invitation_code": has_code,
+                "invitation_code": inv_code if show_code else None,
+                "user_role": role
+            }
+
+@app.post("/contests", status_code=status.HTTP_201_CREATED)
+async def create_contest(payload: ContestCreateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Create a new contest natively in the database.
+    """
+    creator_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT create_contest_native(%s, %s, %s, %s, %s, %s, %s, %s);",
+                    (
+                        payload.title,
+                        payload.ranking_strategy,
+                        payload.start_time,
+                        payload.freeze_time,
+                        payload.end_time,
+                        payload.invitation_code,
+                        payload.judging_description,
+                        creator_id
+                    )
+                )
+                row = await cur.fetchone()
+                await conn.commit()
+                return {"message": "Contest successfully created and pending developer approval", "contest_id": row[0]}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error creating contest: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/contests/{contest_id}/approve")
+async def approve_contest(contest_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Developer/Admin action to approve a contest and make it live.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("SELECT approve_contest_native(%s);", (contest_id,))
+                await conn.commit()
+                return {"message": "Contest successfully approved and is now active"}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error approving contest: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/contests/{contest_id}")
+async def update_contest(contest_id: int, payload: ContestCreateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Update contest parameters. Natively checks for Host/Moderator role.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT update_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                    (
+                        contest_id,
+                        user_id,
+                        payload.title,
+                        payload.ranking_strategy,
+                        payload.start_time,
+                        payload.freeze_time,
+                        payload.end_time,
+                        payload.invitation_code,
+                        payload.judging_description
+                    )
+                )
+                await conn.commit()
+                return {"message": "Contest successfully updated"}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error updating contest: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/contests/{contest_id}")
+async def delete_contest(contest_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Delete a contest. Natively checks for Host role.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("SELECT delete_contest_native(%s, %s);", (contest_id, user_id))
+                await conn.commit()
+                return {"message": "Contest successfully deleted"}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error deleting contest: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+# Task Endpoints
+@app.get("/contests/{contest_id}/tasks")
+async def get_contest_tasks(contest_id: int, current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)):
+    """
+    Fetch all tasks for a contest.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT id, title, description, max_score
+                FROM tasks
+                WHERE contest_id = %s
+                ORDER BY id ASC;
+                """,
+                (contest_id,)
+            )
+            rows = await cur.fetchall()
+            tasks = []
+            for row in rows:
+                tasks.append({
+                    "id": row[0],
+                    "title": row[1],
+                    "description": row[2],
+                    "max_score": float(row[3])
+                })
+            return tasks
+
+@app.post("/contests/{contest_id}/tasks", status_code=status.HTTP_201_CREATED)
+async def create_task(contest_id: int, payload: TaskCreateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Add a task to a contest. Natively validates Host/Moderator role.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT add_task_native(%s, %s, %s, %s, %s);",
+                    (contest_id, user_id, payload.title, payload.description, payload.max_score)
+                )
+                row = await cur.fetchone()
+                await conn.commit()
+                return {"message": "Task successfully created", "task_id": row[0]}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error adding task: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/tasks/{task_id}")
+async def update_task(task_id: int, payload: TaskCreateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Update task details. Natively validates Host/Moderator role.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT update_task_native(%s, %s, %s, %s, %s);",
+                    (task_id, user_id, payload.title, payload.description, payload.max_score)
+                )
+                await conn.commit()
+                return {"message": "Task successfully updated"}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error updating task: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/tasks/{task_id}")
+async def delete_task(task_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Delete task. Natively validates Host/Moderator role.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("SELECT delete_task_native(%s, %s);", (task_id, user_id))
+                await conn.commit()
+                return {"message": "Task successfully deleted"}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error deleting task: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+# Enrollment & Role Management Endpoints
+@app.post("/contests/{contest_id}/enroll")
+async def enroll_contest(contest_id: int, payload: EnrollRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Enroll in a contest. Natively validates invitation code if required.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT enroll_in_contest(%s, %s, %s);",
+                    (contest_id, user_id, payload.invitation_code)
+                )
+                await conn.commit()
+                return {"message": "Successfully enrolled in contest"}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error enrolling in contest: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/contests/{contest_id}/members/role")
+async def update_member_role(contest_id: int, payload: RoleUpdateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Update member role in a contest. Natively validates Host role.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT update_contest_member_role(%s, %s, %s, %s);",
+                    (contest_id, user_id, payload.target_user_id, payload.new_role)
+                )
+                await conn.commit()
+                return {"message": f"Successfully updated user's role to {payload.new_role}"}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error updating member role: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/contests/{contest_id}/members")
+async def get_contest_members(contest_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    List members and roles for a contest. Requires Host/Moderator role.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT role FROM enrollments WHERE contest_id = %s AND user_id = %s",
+                (contest_id, user_id)
+            )
+            row = await cur.fetchone()
+            if not row or row[0] not in ("HOST", "MODERATOR"):
+                raise HTTPException(status_code=403, detail="Unauthorized: Only hosts or moderators can view members")
+            
+            await cur.execute(
+                """
+                SELECT u.id, u.username, e.role
+                FROM enrollments e
+                JOIN users u ON e.user_id = u.id
+                WHERE e.contest_id = %s
+                ORDER BY u.username ASC;
+                """,
+                (contest_id,)
+            )
+            rows = await cur.fetchall()
+            return [{"user_id": r[0], "username": r[1], "role": r[2]} for r in rows]
+
+@app.get("/users")
+async def list_users(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Fetch all users in the system (useful for assigning roles).
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT id, username FROM users ORDER BY username ASC;")
+            rows = await cur.fetchall()
+            return [{"id": r[0], "username": r[1]} for r in rows]
+
+# Submission Endpoints
 @app.post("/submissions", status_code=status.HTTP_201_CREATED)
 async def create_submission(
     payload: SubmissionRequest, 
@@ -188,7 +568,7 @@ async def create_submission(
         async with conn.cursor() as cur:
             # 1. Database-native check: Verify the user is enrolled in this contest
             await cur.execute(
-                "SELECT 1 FROM enrollments WHERE contest_id = %s AND user_id = %s",
+                "SELECT role FROM enrollments WHERE contest_id = %s AND user_id = %s",
                 (payload.contest_id, user_id)
             )
             enrolled = await cur.fetchone()
@@ -198,16 +578,41 @@ async def create_submission(
                     detail=f"User '{current_user['username']}' (ID {user_id}) is not enrolled in contest {payload.contest_id}"
                 )
 
+            # 1a. Verify contest is active
+            await cur.execute(
+                "SELECT status FROM contests WHERE id = %s",
+                (payload.contest_id,)
+            )
+            contest_status_row = await cur.fetchone()
+            if not contest_status_row or contest_status_row[0] != 'ACTIVE':
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Submissions are only allowed for ACTIVE contests"
+                )
+
+            # 1b. Verify task belongs to contest if task_id is provided
+            if payload.task_id:
+                await cur.execute(
+                    "SELECT 1 FROM tasks WHERE id = %s AND contest_id = %s",
+                    (payload.task_id, payload.contest_id)
+                )
+                task_belongs = await cur.fetchone()
+                if not task_belongs:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Task {payload.task_id} does not belong to contest {payload.contest_id}"
+                    )
+
             # 2. Ingest the submission into the PostgreSQL queue
             submission_json = json.dumps(payload.submission_data)
             
             await cur.execute(
                 """
-                INSERT INTO submissions (contest_id, user_id, submission_data, status)
-                VALUES (%s, %s, %s::jsonb, 'PENDING')
+                INSERT INTO submissions (contest_id, user_id, task_id, submission_data, status)
+                VALUES (%s, %s, %s, %s::jsonb, 'PENDING')
                 RETURNING id, submitted_at;
                 """,
-                (payload.contest_id, user_id, submission_json)
+                (payload.contest_id, user_id, payload.task_id, submission_json)
             )
             row = await cur.fetchone()
             

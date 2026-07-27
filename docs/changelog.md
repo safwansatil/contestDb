@@ -6,6 +6,30 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.3.1] - 2026-07-27 (Sequence Sync & Custom Strategy Hotfix)
+### Added
+* Created [docs/contests.md](docs/contests.md) detailing contest workflows, developer actions auditing procedures, seeded user roles mappings, and sequence out-of-sync troubleshooting.
+
+### Fixed
+* Fixed sequence out-of-sync error on inserting new contests by appending `setval` sequence synchronizers to the end of [seed.sql](database/seed.sql).
+* Relaxed Pydantic validator in [main.py](backend/app/main.py) to allow any custom ranking strategy text.
+* Replaced strategy select dropdown with a text input in [index.html](backend/app/static/index.html) to allow hosts to input custom strategies for developer approval.
+* Enforced coherent validation in [main.py](backend/app/main.py) to block submissions to contests that are not `'ACTIVE'`.
+
+## [0.3.0] - 2026-07-27 (Contest Systems, Tasks & Roles Release)
+### Added
+* Implemented native stored procedures inside [procedures.sql](database/procedures.sql) for database-level security checks and role validation (`create_contest_native`, `approve_contest_native`, `update_contest_native`, `delete_contest_native`, `add_task_native`, `update_task_native`, `delete_task_native`, `enroll_in_contest`, `update_contest_member_role`).
+* Updated `get_leaderboard` function in [procedures.sql](database/procedures.sql) to calculate task-aware standings (summing max task scores for `'SUM'`, taking max overall for `'MAX'`, with backward-compatible fallback for contests without tasks).
+* Created new API gateway endpoints inside [main.py](backend/app/main.py) for contest CRUD/approvals, tasks CRUD, enrollment, role updates, and user directory listings.
+* Upgraded the frontend interface in [index.html](backend/app/static/index.html) to render dynamic contests cards, status tags, invitation code modals, task list components, role updates forms, and approval dev triggers.
+* Expanded [architecture_and_erd.md](docs/architecture_and_erd.md) and [manual_testing.md](docs/manual_testing.md) to document the new DDL specs, ER diagram relationships, and manual verification instructions.
+
+### Changed
+* Altered `contests` table in [init.sql](database/init.sql) to add `status`, `judging_description`, and `invitation_code` fields.
+* Altered `enrollments` table in [init.sql](database/init.sql) to add the `role` column (`'HOST'`, `'MODERATOR'`, `'PARTICIPANT'`) with native check constraints.
+* Created the `tasks` table and added `task_id` reference to `submissions` in [init.sql](database/init.sql).
+* Updated seed scripts in [seed.sql](database/seed.sql) to seed default tasks, mapped roles, and submissions referencing specific tasks.
+
 ## [0.2.0] - 2026-07-26 (Authentication & Registration Release)
 ### Added
 * Created [docs/auth_architecture.md](docs/auth_architecture.md) detailing security trade-offs, PostgreSQL `pgcrypto` hashing, and JWT token management best practices.

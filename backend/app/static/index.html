@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ContestDB - Premium Contest Dashboard</title>
+    <title>ContestDB - Premium In-Database Contest Platform</title>
     <!-- Modern typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,8 +11,8 @@
     
     <style>
         :root {
-            --bg-color: #080c14;
-            --card-bg: rgba(17, 25, 40, 0.75);
+            --bg-color: #060a13;
+            --card-bg: rgba(13, 20, 35, 0.75);
             --card-border: rgba(255, 255, 255, 0.08);
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
@@ -21,6 +21,7 @@
             --accent-green: #10b981;
             --accent-red: #ef4444;
             --accent-purple: #8b5cf6;
+            --accent-yellow: #f59e0b;
         }
 
         body {
@@ -28,7 +29,8 @@
             background-color: var(--bg-color);
             background-image: 
                 radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.07) 0px, transparent 50%),
-                radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.07) 0px, transparent 50%);
+                radial-gradient(at 100% 0%, rgba(139, 92, 246, 0.07) 0px, transparent 50%),
+                radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.05) 0px, transparent 50%);
             color: var(--text-primary);
             margin: 0;
             padding: 20px;
@@ -37,7 +39,7 @@
         }
 
         .container {
-            max-width: 1100px;
+            max-width: 1280px;
             margin: 0 auto;
         }
 
@@ -93,15 +95,28 @@
             color: white;
         }
 
-        .grid {
+        /* 3-Column Layout */
+        .layout-grid {
             display: grid;
-            grid-template-columns: 1.1fr 0.9fr;
+            grid-template-columns: 320px 1fr 340px;
             gap: 24px;
         }
 
+        @media (max-width: 1200px) {
+            .layout-grid {
+                grid-template-columns: 300px 1fr;
+            }
+            .right-panel {
+                grid-column: span 2;
+            }
+        }
+
         @media (max-width: 900px) {
-            .grid {
+            .layout-grid {
                 grid-template-columns: 1fr;
+            }
+            .right-panel {
+                grid-column: span 1;
             }
         }
 
@@ -110,8 +125,10 @@
             backdrop-filter: blur(12px);
             border: 1px solid var(--card-border);
             border-radius: 16px;
-            padding: 24px;
+            padding: 20px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+            margin-bottom: 24px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
 
         h2 {
@@ -121,21 +138,21 @@
             color: var(--text-primary);
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             padding-bottom: 12px;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
 
         label {
             display: block;
-            margin-bottom: 8px;
-            font-size: 13px;
-            font-weight: 500;
+            margin-bottom: 6px;
+            font-size: 12px;
+            font-weight: 600;
             color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -143,14 +160,14 @@
 
         select, textarea, input {
             width: 100%;
-            padding: 12px 16px;
+            padding: 10px 14px;
             background-color: rgba(8, 12, 20, 0.6);
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: var(--text-primary);
-            border-radius: 10px;
+            border-radius: 8px;
             box-sizing: border-box;
             font-family: inherit;
-            font-size: 14px;
+            font-size: 13.5px;
             transition: all 0.2s ease;
         }
 
@@ -161,36 +178,128 @@
         }
 
         textarea {
-            height: 120px;
+            height: 80px;
             font-family: 'Fira Code', monospace;
-            font-size: 13px;
+            font-size: 12.5px;
             resize: vertical;
         }
 
-        button.btn-primary {
-            background: linear-gradient(135deg, var(--primary), #3b82f6);
+        .btn {
             color: white;
             border: none;
-            padding: 12px 20px;
-            border-radius: 10px;
+            padding: 10px 16px;
+            border-radius: 8px;
             cursor: pointer;
             font-weight: 600;
-            font-size: 14px;
-            width: 100%;
+            font-size: 13px;
             transition: all 0.2s ease;
-            box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
         }
 
-        button.btn-primary:hover {
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), #3b82f6);
+            box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
+            width: 100%;
+        }
+
+        .btn-primary:hover {
             transform: translateY(-1px);
             box-shadow: 0 6px 16px rgba(56, 189, 248, 0.3);
         }
 
-        button.btn-primary:active {
-            transform: translateY(0);
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
         }
 
-        /* Standings Table Styling */
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-success {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: var(--accent-green);
+        }
+
+        .btn-success:hover {
+            background: var(--accent-green);
+            color: white;
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--accent-red);
+        }
+
+        .btn-danger:hover {
+            background: var(--accent-red);
+            color: white;
+        }
+
+        /* Items list items (Contests, Tasks) */
+        .item-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .item-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 10px;
+            padding: 12px 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .item-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(56, 189, 248, 0.3);
+        }
+
+        .item-card.active {
+            background: rgba(56, 189, 248, 0.08);
+            border-color: var(--primary);
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.1);
+        }
+
+        .item-title {
+            font-weight: 700;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .item-meta {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        /* Badges */
+        .badge {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .badge-pending { background-color: rgba(245, 158, 11, 0.15); color: var(--accent-yellow); border: 1px solid rgba(245, 158, 11, 0.3); }
+        .badge-active { background-color: rgba(16, 185, 129, 0.15); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .badge-role { background-color: rgba(139, 92, 246, 0.15); color: var(--accent-purple); border: 1px solid rgba(139, 92, 246, 0.3); }
+
+        /* Standing tables */
         table {
             width: 100%;
             border-collapse: collapse;
@@ -198,13 +307,13 @@
 
         th, td {
             text-align: left;
-            padding: 14px 16px;
+            padding: 10px 12px;
         }
 
         th {
             background-color: rgba(8, 12, 20, 0.4);
             color: var(--primary);
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -213,22 +322,22 @@
 
         td {
             border-bottom: 1px solid rgba(255, 255, 255, 0.02);
-            font-size: 14px;
+            font-size: 13px;
         }
 
         tr:hover td {
-            background-color: rgba(255, 255, 255, 0.02);
+            background-color: rgba(255, 255, 255, 0.01);
         }
 
         .rank-badge {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 24px;
-            height: 24px;
+            width: 22px;
+            height: 22px;
             border-radius: 50%;
             font-weight: 700;
-            font-size: 12px;
+            font-size: 11px;
         }
 
         .rank-1 { background-color: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); }
@@ -239,10 +348,10 @@
         .admin-toggle {
             display: flex;
             align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
+            gap: 8px;
+            margin-bottom: 14px;
             background: rgba(255, 255, 255, 0.02);
-            padding: 10px 14px;
+            padding: 8px 12px;
             border-radius: 8px;
             border: 1px solid rgba(255, 255, 255, 0.05);
         }
@@ -256,7 +365,7 @@
         .auth-tabs {
             display: flex;
             gap: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             padding-bottom: 10px;
         }
@@ -268,7 +377,7 @@
             cursor: pointer;
             color: var(--text-secondary);
             font-weight: 600;
-            font-size: 14px;
+            font-size: 13px;
             border-radius: 6px;
             transition: all 0.2s;
         }
@@ -277,6 +386,35 @@
             background-color: rgba(56, 189, 248, 0.1);
             color: var(--primary);
             border: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        /* Task Cards */
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .task-card {
+            background: rgba(255, 255, 255, 0.01);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            border-radius: 10px;
+            padding: 14px;
+        }
+
+        .task-card-title {
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--primary);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .task-card-desc {
+            font-size: 12.5px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+            line-height: 1.4;
         }
 
         /* Logger Feed */
@@ -291,65 +429,87 @@
             font-family: 'Fira Code', monospace;
             padding: 16px;
             border-radius: 12px;
-            height: 150px;
+            height: 120px;
             overflow-y: auto;
-            font-size: 13px;
+            font-size: 12px;
             box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8);
         }
 
         .log-row {
-            margin-bottom: 6px;
+            margin-bottom: 4px;
             line-height: 1.4;
         }
 
         .log-time {
             color: var(--text-secondary);
-            font-size: 11px;
+            font-size: 10px;
             margin-right: 8px;
         }
 
-        .log-err {
-            color: var(--accent-red);
-        }
-
-        .log-info {
-            color: var(--primary);
-        }
+        .log-err { color: var(--accent-red); }
+        .log-info { color: var(--primary); }
         
         .badge-info {
             background-color: rgba(56, 189, 248, 0.1);
             color: var(--primary);
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 5px;
+            font-size: 10px;
             font-weight: 600;
             border: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        /* Modal Overlay */
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal {
+            background: #0d1423;
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 24px;
+            width: 90%;
+            max-width: 440px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- Top bar -->
         <header>
             <div class="brand">
                 <h1>ContestDB Gateway</h1>
                 <div class="brand-sub">PostgreSQL-Native Contest Processing System</div>
             </div>
             <div class="user-status" id="user-status-container">
-                <!-- Logged in status or empty -->
+                <span class="badge-info" style="background-color: rgba(239, 68, 68, 0.1); color: var(--accent-red); border: 1px solid rgba(239, 68, 68, 0.2);">Guest Mode</span>
             </div>
         </header>
 
-        <div class="grid">
-            <!-- Left Side: Auth / Submit Panel -->
+        <!-- 3-Column layout -->
+        <div class="layout-grid">
+            <!-- Column 1: Contests & Auth -->
             <div class="left-panel">
-                <!-- Auth Widget (Shown when logged out) -->
+                <!-- Auth Card -->
                 <div class="card" id="auth-card">
                     <div class="auth-tabs">
                         <div class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Sign In</div>
                         <div class="auth-tab" id="tab-signup" onclick="switchAuthTab('signup')">Sign Up</div>
                     </div>
                     
-                    <h2 id="auth-title">Welcome to ContestDB</h2>
+                    <h2 id="auth-title" style="border-bottom:none; margin-bottom:12px; font-size:16px;">Welcome to ContestDB</h2>
                     
                     <form id="auth-form" onsubmit="handleAuthSubmit(event)">
                         <div class="form-group">
@@ -360,58 +520,172 @@
                             <label for="auth-password">Password</label>
                             <input type="password" id="auth-password" required placeholder="••••••••">
                         </div>
-                        <button type="submit" class="btn-primary" id="auth-btn">Sign In</button>
+                        <button type="submit" class="btn btn-primary" id="auth-btn">Sign In</button>
                     </form>
                 </div>
 
-                <!-- Submission Widget (Shown when logged in) -->
-                <div class="card" id="submission-card" style="display: none;">
-                    <h2>Ingest Telemetry / Data <span class="badge-info">Enrolled Check</span></h2>
-                    
-                    <div class="form-group">
-                        <label for="contest-select">Target Contest</label>
-                        <select id="contest-select" onchange="updatePayloadTemplate()">
-                            <option value="2">Contest 2: Accumulator Math Quiz (SUM strategy)</option>
-                            <option value="1">Contest 1: Max Speed Run (MAX strategy - Frozen)</option>
-                        </select>
+                <!-- Contests List Card -->
+                <div class="card">
+                    <h2>Contests List <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 11px;" onclick="loadContests()">Reload</button></h2>
+                    <div class="item-list" id="contests-list">
+                        <!-- Loaded dynamically -->
                     </div>
+                </div>
 
-                    <div class="form-group">
-                        <label for="payload-data">Submission Data (JSONB Payload)</label>
-                        <textarea id="payload-data">{"score": 90.0, "verdict": "ROUND_1_SUCCESS"}</textarea>
-                    </div>
-
-                    <button class="btn-primary" onclick="submitPayload()">Submit to Database Queue</button>
+                <!-- Create Contest Card (Enrolled/Logged in users only) -->
+                <div class="card" id="create-contest-card" style="display: none;">
+                    <h2>Host New Contest</h2>
+                    <form onsubmit="handleCreateContest(event)">
+                        <div class="form-group">
+                            <label for="new-title">Contest Title</label>
+                            <input type="text" id="new-title" required placeholder="e.g. Chess Tournament">
+                        </div>
+                        <div class="form-group">
+                            <label for="new-strategy">Ranking Strategy</label>
+                            <input type="text" id="new-strategy" required placeholder="e.g. SUM, MAX, ICPC, or Custom">
+                        </div>
+                        <div class="form-group">
+                            <label for="new-start">Start Time</label>
+                            <input type="datetime-local" id="new-start" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-freeze">Freeze Time</label>
+                            <input type="datetime-local" id="new-freeze" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-end">End Time</label>
+                            <input type="datetime-local" id="new-end" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-code">Invitation Code (Optional)</label>
+                            <input type="text" id="new-code" placeholder="Leave empty for public">
+                        </div>
+                        <div class="form-group">
+                            <label for="new-judging">Judging Logic Description</label>
+                            <textarea id="new-judging" required placeholder="Describe custom calculations, verdicts, and scoring criteria here..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Create & Submit for Approval</button>
+                    </form>
                 </div>
             </div>
 
-            <!-- Right Side: Leaderboard -->
-            <div class="card">
-                <h2>Standings Leaderboard</h2>
-                
-                <div class="admin-toggle">
-                    <input type="checkbox" id="as-admin-check" onchange="fetchLeaderboard()">
-                    <label for="as-admin-check">View as Admin (Bypass Scoreboard Freeze)</label>
+            <!-- Column 2: Selected Contest, Tasks, Submissions -->
+            <div class="main-panel">
+                <!-- Contest Details Card -->
+                <div class="card" id="active-contest-card">
+                    <h2 id="active-contest-title">Select a Contest</h2>
+                    <div id="active-contest-details" style="color: var(--text-secondary); font-size:13.5px;">
+                        Please select a contest from the list on the left to see tasks, details, and standings.
+                    </div>
                 </div>
 
-                <table id="leaderboard-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 60px;">Rank</th>
-                            <th>Participant</th>
-                            <th>Total Score</th>
-                        </tr>
-                    </thead>
-                    <tbody id="leaderboard-body">
+                <!-- Manage Tasks Card (Hosts/Moderators of Active Contest only) -->
+                <div class="card" id="manage-tasks-card" style="display: none;">
+                    <h2>Add Task to Contest</h2>
+                    <form onsubmit="handleAddTask(event)">
+                        <div class="form-group">
+                            <label for="task-title">Task Title</label>
+                            <input type="text" id="task-title" required placeholder="e.g. Problem A: Fast Run">
+                        </div>
+                        <div class="form-group">
+                            <label for="task-desc">Task Description</label>
+                            <textarea id="task-desc" required placeholder="Detail the task guidelines, parameters, and payloads."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="task-max-score">Max Score</label>
+                            <input type="number" id="task-max-score" required value="100.0" step="1" min="0">
+                        </div>
+                        <button type="submit" class="btn btn-success">Add Task</button>
+                    </form>
+                </div>
+
+                <!-- Submission Ingestion Card (Enrolled users only) -->
+                <div class="card" id="submit-payload-card" style="display: none;">
+                    <h2>Submit Telemetry / Solution</h2>
+                    <div class="form-group">
+                        <label for="submit-task-select">Select Task</label>
+                        <select id="submit-task-select" onchange="updatePayloadTemplate()">
+                            <!-- Loaded dynamically -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="payload-data">Submission Data (JSONB)</label>
+                        <textarea id="payload-data" style="height: 100px;">{"score": 90.0, "verdict": "AC"}</textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="submitPayload()">Submit to Database Queue</button>
+                </div>
+            </div>
+
+            <!-- Column 3: Leaderboard & Member Management -->
+            <div class="right-panel">
+                <!-- Leaderboard Card -->
+                <div class="card">
+                    <h2>Standings Leaderboard</h2>
+                    <div class="admin-toggle">
+                        <input type="checkbox" id="as-admin-check" onchange="fetchLeaderboard()">
+                        <label for="as-admin-check">View as Admin (Bypass Score Freeze)</label>
+                    </div>
+                    <table id="leaderboard-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 50px;">Rank</th>
+                                <th>Participant</th>
+                                <th style="text-align: right;">Total Score</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboard-body">
+                            <tr><td colspan='3' style='text-align:center; color:var(--text-secondary);'>Select a contest to view standings</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Role Management Card (Host only) -->
+                <div class="card" id="role-manager-card" style="display: none;">
+                    <h2>Contest Role Manager</h2>
+                    <div class="form-group">
+                        <label for="role-user-select">Select User</label>
+                        <select id="role-user-select">
+                            <!-- Loaded dynamically -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="role-select">Assign Role</label>
+                        <select id="role-select">
+                            <option value="PARTICIPANT">Participant</option>
+                            <option value="MODERATOR">Moderator</option>
+                            <option value="HOST">Host</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="handleUpdateRole()">Update Role</button>
+                    
+                    <h3 style="font-size:12px; text-transform:uppercase; color:var(--text-secondary); margin-top:20px; margin-bottom:8px;">Current Members</h3>
+                    <div id="members-list" style="font-size:13px; max-height: 150px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;">
                         <!-- Loaded dynamically -->
-                    </tbody>
-                </table>
+                    </div>
+                </div>
             </div>
         </div>
 
+        <!-- Log feed -->
         <div class="logs-container">
             <div class="logs" id="log-feed">
                 <!-- Log feed row will be appended here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Invitation Code Modal -->
+    <div class="overlay" id="enroll-modal">
+        <div class="modal">
+            <h2 style="border-bottom:none; margin-bottom:8px;">Enrollment Code Required</h2>
+            <p style="color:var(--text-secondary); font-size:13px; line-height:1.4; margin-top:0;">This contest is private and requires an invitation code to join.</p>
+            <div class="form-group">
+                <label for="enroll-code-input">Invitation Code</label>
+                <input type="text" id="enroll-code-input" placeholder="Enter code">
+            </div>
+            <div style="display:flex; gap:10px; margin-top:16px;">
+                <button class="btn btn-secondary" style="flex:1" onclick="closeEnrollModal()">Cancel</button>
+                <button class="btn btn-success" style="flex:1;" onclick="submitEnroll()">Submit & Join</button>
             </div>
         </div>
     </div>
@@ -420,6 +694,9 @@
         let currentAuthMode = 'login';
         let authToken = localStorage.getItem('contestdb_token');
         let currentUser = null;
+        let selectedContestId = null;
+        let selectedContestRole = null;
+        let usersList = [];
 
         function log(message, type = 'success') {
             const feed = document.getElementById("log-feed");
@@ -436,7 +713,6 @@
             currentAuthMode = mode;
             document.getElementById('tab-login').classList.toggle('active', mode === 'login');
             document.getElementById('tab-signup').classList.toggle('active', mode === 'signup');
-            
             document.getElementById('auth-title').innerText = mode === 'login' ? 'Sign In to Your Account' : 'Register a New Account';
             document.getElementById('auth-btn').innerText = mode === 'login' ? 'Sign In' : 'Sign Up';
         }
@@ -455,7 +731,8 @@
                 if (response.ok) {
                     currentUser = await response.json();
                     showLoggedIn();
-                    log(`Authenticated session verified for user: ${currentUser.username}`, 'info');
+                    log(`Authenticated session verified for: ${currentUser.username}`, 'info');
+                    loadAllUsers();
                 } else {
                     localStorage.removeItem('contestdb_token');
                     authToken = null;
@@ -463,14 +740,13 @@
                     log('Session expired. Please log in again.', 'error');
                 }
             } catch (err) {
-                log('Network error validating user session.', 'error');
+                log('Network error validating session.', 'error');
             }
         }
 
-        // Display login view
         function showLoggedIn() {
             document.getElementById('auth-card').style.display = 'none';
-            document.getElementById('submission-card').style.display = 'block';
+            document.getElementById('create-contest-card').style.display = 'block';
             
             document.getElementById('user-status-container').innerHTML = `
                 <span style="font-size: 14px; font-weight: 500;">
@@ -478,25 +754,27 @@
                 </span>
                 <button class="btn-logout" onclick="handleLogout()">Sign Out</button>
             `;
-            fetchLeaderboard();
+            loadContests();
         }
 
-        // Display logout view
         function showLoggedOut() {
             document.getElementById('auth-card').style.display = 'block';
-            document.getElementById('submission-card').style.display = 'none';
+            document.getElementById('create-contest-card').style.display = 'none';
             document.getElementById('user-status-container').innerHTML = `
                 <span class="badge-info" style="background-color: rgba(239, 68, 68, 0.1); color: var(--accent-red); border: 1px solid rgba(239, 68, 68, 0.2);">Guest Mode</span>
             `;
-            fetchLeaderboard();
+            loadContests();
         }
 
         function handleLogout() {
             localStorage.removeItem('contestdb_token');
             authToken = null;
             currentUser = null;
+            selectedContestId = null;
+            selectedContestRole = null;
             showLoggedOut();
-            log('Logged out of system successfully.');
+            log('Logged out successfully.');
+            resetActiveContestView();
         }
 
         async function handleAuthSubmit(event) {
@@ -522,39 +800,417 @@
                     showLoggedIn();
                     log(`Successfully logged in as ${currentUser.username}!`);
                     
-                    // Clear forms
                     document.getElementById('auth-username').value = '';
                     document.getElementById('auth-password').value = '';
+                    loadAllUsers();
                 } else {
                     log(`Auth failed: ${data.detail || JSON.stringify(data)}`, 'error');
                 }
             } catch (err) {
-                log(`Error connecting to authentication endpoint: ${err.message}`, 'error');
+                log(`Error connecting to endpoint: ${err.message}`, 'error');
             }
         }
 
-        function updatePayloadTemplate() {
-            const contestId = document.getElementById("contest-select").value;
-            const textarea = document.getElementById("payload-data");
-            if (contestId === "1") {
-                textarea.value = JSON.stringify({ "run_time_seconds": 38.5, "restarts": 0 }, null, 2);
+        // Fetch all contests
+        async function loadContests() {
+            try {
+                const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+                const response = await fetch('/contests', { headers });
+                const contests = await response.json();
+                
+                const list = document.getElementById('contests-list');
+                list.innerHTML = '';
+                
+                if (contests.length === 0) {
+                    list.innerHTML = '<div style="color:var(--text-secondary); text-align:center; font-size:13px; padding:10px;">No contests created yet</div>';
+                    return;
+                }
+
+                contests.forEach(contest => {
+                    const card = document.createElement('div');
+                    card.className = `item-card ${selectedContestId === contest.id ? 'active' : ''}`;
+                    card.onclick = () => selectContest(contest);
+                    
+                    const startLocal = new Date(contest.start_time).toLocaleString();
+                    const strategyBadge = `<span class="badge badge-role" style="background:rgba(56, 189, 248, 0.1); color:var(--primary); border:none;">${contest.ranking_strategy}</span>`;
+                    const statusBadge = contest.status === 'PENDING_APPROVAL' 
+                        ? `<span class="badge badge-pending">${contest.status}</span>` 
+                        : `<span class="badge badge-active">${contest.status}</span>`;
+                    
+                    const roleBadge = contest.user_role 
+                        ? `<span class="badge badge-role">${contest.user_role}</span>` 
+                        : `<span class="badge badge-pending" style="background:none; border: 1px solid rgba(255,255,255,0.1); color:var(--text-secondary)">Unenrolled</span>`;
+
+                    card.innerHTML = `
+                        <div class="item-title">
+                            <span>${contest.title}</span>
+                            ${statusBadge}
+                        </div>
+                        <div class="item-meta">
+                            <span>Start: ${startLocal}</span>
+                            ${strategyBadge}
+                            ${roleBadge}
+                        </div>
+                    `;
+                    list.appendChild(card);
+                });
+                
+                // If selected contest exists, update details panel
+                if (selectedContestId) {
+                    const active = contests.find(c => c.id === selectedContestId);
+                    if (active) {
+                        selectContest(active);
+                    }
+                }
+            } catch (err) {
+                log('Error loading contests list: ' + err.message, 'error');
+            }
+        }
+
+        function resetActiveContestView() {
+            document.getElementById('active-contest-title').innerText = 'Select a Contest';
+            document.getElementById('active-contest-details').innerHTML = 'Please select a contest from the list on the left to see tasks, details, and standings.';
+            document.getElementById('manage-tasks-card').style.display = 'none';
+            document.getElementById('submit-payload-card').style.display = 'none';
+            document.getElementById('role-manager-card').style.display = 'none';
+            document.getElementById('leaderboard-body').innerHTML = `<tr><td colspan='3' style='text-align:center; color:var(--text-secondary);'>Select a contest to view standings</td></tr>`;
+        }
+
+        // Select a contest
+        async function selectContest(contest) {
+            selectedContestId = contest.id;
+            selectedContestRole = contest.user_role;
+            
+            const detailsPanel = document.getElementById('active-contest-details');
+            document.getElementById('active-contest-title').innerText = contest.title;
+            
+            const startStr = new Date(contest.start_time).toLocaleString();
+            const freezeStr = new Date(contest.freeze_time).toLocaleString();
+            const endStr = new Date(contest.end_time).toLocaleString();
+            
+            let actionButtons = '';
+            if (currentUser) {
+                if (!contest.user_role && contest.status === 'ACTIVE') {
+                    // Let user enroll
+                    actionButtons = `<button class="btn btn-success" style="margin-top:14px; width:100%" onclick="promptEnroll(${contest.id}, ${contest.requires_invitation_code})">Join Contest</button>`;
+                }
+                
+                if (contest.status === 'PENDING_APPROVAL') {
+                    // Show Developer Approve button
+                    actionButtons += `<button class="btn btn-success" style="margin-top:14px; width:100%; background: linear-gradient(135deg, var(--accent-purple), #6d28d9); box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);" onclick="approveContest(${contest.id})">Approve Contest (Dev Action)</button>`;
+                }
+
+                if (contest.user_role === 'HOST') {
+                    // Show Delete button
+                    actionButtons += `<button class="btn btn-danger" style="margin-top:10px; width:100%" onclick="deleteContest(${contest.id})">Delete Contest (Host Action)</button>`;
+                }
             } else {
-                textarea.value = JSON.stringify({ "score": 95.0, "verdict": "ROUND_2_SUCCESS" }, null, 2);
+                actionButtons = `<p style="font-size:12px; color:var(--text-secondary); margin-top:14px;">Log in to enroll or submit solutions.</p>`;
             }
+
+            let invitationString = '';
+            if (contest.user_role === 'HOST' || contest.user_role === 'MODERATOR') {
+                if (contest.requires_invitation_code) {
+                    invitationString = `<p style="margin:6px 0; color:var(--accent-yellow)"><strong>Invitation Code:</strong> ${contest.invitation_code || 'None'}</p>`;
+                }
+            }
+
+            detailsPanel.innerHTML = `
+                <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">
+                    <p style="margin:0;"><strong>Ranking Strategy:</strong> ${contest.ranking_strategy}</p>
+                    <p style="margin:0;"><strong>Status:</strong> <span class="badge ${contest.status === 'ACTIVE' ? 'badge-active' : 'badge-pending'}">${contest.status}</span></p>
+                    <p style="margin:0;"><strong>Timeline:</strong></p>
+                    <div style="font-size:12.5px; padding-left:12px; display:flex; flex-direction:column; gap:4px; color:var(--text-secondary)">
+                        <span>Start: ${startStr}</span>
+                        <span>Standings Freeze: ${freezeStr}</span>
+                        <span>End: ${endStr}</span>
+                    </div>
+                    <div style="margin-top:10px; border-top:1px solid rgba(255,255,255,0.05); padding-top:10px;">
+                        <strong>Required Judging logic:</strong>
+                        <p style="font-size:12.5px; line-height:1.4; color:var(--text-secondary); margin-top:4px; white-space:pre-wrap;">${contest.judging_description || 'No custom logic provided.'}</p>
+                    </div>
+                    ${invitationString}
+                </div>
+                ${actionButtons}
+                
+                <h3 style="margin-top:20px; font-size:14px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:6px;">Tasks in this Contest</h3>
+                <div class="task-list" id="tasks-list-panel">
+                    <p style="color:var(--text-secondary); font-size:12.5px;">Loading tasks...</p>
+                </div>
+            `;
+
+            // Fetch tasks and standings
+            fetchTasks(contest.id);
             fetchLeaderboard();
+
+            // Toggle panels
+            if (currentUser && (contest.user_role === 'HOST' || contest.user_role === 'MODERATOR')) {
+                document.getElementById('manage-tasks-card').style.display = 'block';
+            } else {
+                document.getElementById('manage-tasks-card').style.display = 'none';
+            }
+
+            if (currentUser && contest.user_role && contest.status === 'ACTIVE') {
+                document.getElementById('submit-payload-card').style.display = 'block';
+            } else {
+                document.getElementById('submit-payload-card').style.display = 'none';
+            }
+
+            if (currentUser && contest.user_role === 'HOST') {
+                document.getElementById('role-manager-card').style.display = 'block';
+                loadContestMembers(contest.id);
+            } else {
+                document.getElementById('role-manager-card').style.display = 'none';
+            }
         }
 
+        // Prompt invitation code modal
+        function promptEnroll(contestId, requiresCode) {
+            if (requiresCode) {
+                document.getElementById('enroll-modal').style.display = 'flex';
+                document.getElementById('enroll-code-input').value = '';
+                document.getElementById('enroll-code-input').focus();
+            } else {
+                submitEnrollDirect(contestId, null);
+            }
+        }
+
+        function closeEnrollModal() {
+            document.getElementById('enroll-modal').style.display = 'none';
+        }
+
+        async function submitEnroll() {
+            const code = document.getElementById('enroll-code-input').value;
+            closeEnrollModal();
+            submitEnrollDirect(selectedContestId, code);
+        }
+
+        async function submitEnrollDirect(contestId, code) {
+            log(`Enrolling in contest #${contestId}...`, 'info');
+            try {
+                const response = await fetch(`/contests/${contestId}/enroll`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ invitation_code: code })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    log('Successfully enrolled in contest!');
+                    loadContests();
+                } else {
+                    log(`Enrollment failed: ${data.detail}`, 'error');
+                }
+            } catch (err) {
+                log('Network error enrolling: ' + err.message, 'error');
+            }
+        }
+
+        // Approve contest (dev action)
+        async function approveContest(contestId) {
+            log(`Approving contest #${contestId}...`, 'info');
+            try {
+                const response = await fetch(`/contests/${contestId}/approve`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    log('Contest approved! It is now ACTIVE and live.');
+                    loadContests();
+                } else {
+                    log('Approval failed: ' + data.detail, 'error');
+                }
+            } catch (err) {
+                log('Network error approving contest: ' + err.message, 'error');
+            }
+        }
+
+        // Delete contest
+        async function deleteContest(contestId) {
+            if (!confirm("Are you sure you want to delete this contest and all its associated data?")) return;
+            log(`Deleting contest #${contestId}...`, 'info');
+            try {
+                const response = await fetch(`/contests/${contestId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    log('Contest successfully deleted!');
+                    selectedContestId = null;
+                    loadContests();
+                    resetActiveContestView();
+                } else {
+                    log('Deletion failed: ' + data.detail, 'error');
+                }
+            } catch (err) {
+                log('Network error deleting: ' + err.message, 'error');
+            }
+        }
+
+        // Fetch contest tasks
+        async function fetchTasks(contestId) {
+            try {
+                const response = await fetch(`/contests/${contestId}/tasks`);
+                const tasks = await response.json();
+                
+                const list = document.getElementById('tasks-list-panel');
+                const select = document.getElementById('submit-task-select');
+                
+                list.innerHTML = '';
+                select.innerHTML = '';
+
+                if (tasks.length === 0) {
+                    list.innerHTML = '<p style="color:var(--text-secondary); font-size:12.5px;">No tasks created for this contest.</p>';
+                    select.innerHTML = '<option value="">No tasks available</option>';
+                    return;
+                }
+
+                tasks.forEach(task => {
+                    // Task list
+                    const div = document.createElement('div');
+                    div.className = 'task-card';
+                    div.innerHTML = `
+                        <div class="task-card-title">
+                            <span>${task.title}</span>
+                            <span style="color:var(--text-secondary); font-size:11px;">Max Score: ${task.max_score}</span>
+                        </div>
+                        <div class="task-card-desc">${task.description}</div>
+                        ${selectedContestRole === 'HOST' || selectedContestRole === 'MODERATOR' 
+                            ? `<button class="btn btn-danger" style="padding: 2px 6px; font-size: 10px; margin-top:8px;" onclick="deleteTask(${task.id})">Delete Task</button>` 
+                            : ''}
+                    `;
+                    list.appendChild(div);
+
+                    // Submission dropdown option
+                    const opt = document.createElement('option');
+                    opt.value = task.id;
+                    opt.innerText = task.title;
+                    select.appendChild(opt);
+                });
+
+                updatePayloadTemplate();
+            } catch (err) {
+                log('Error fetching tasks: ' + err.message, 'error');
+            }
+        }
+
+        // Add task
+        async function handleAddTask(event) {
+            event.preventDefault();
+            const title = document.getElementById('task-title').value;
+            const desc = document.getElementById('task-desc').value;
+            const maxScore = parseFloat(document.getElementById('task-max-score').value);
+
+            log(`Adding task '${title}' to contest #${selectedContestId}...`, 'info');
+            try {
+                const response = await fetch(`/contests/${selectedContestId}/tasks`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ title, description: desc, max_score: maxScore })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    log(`Task successfully created with ID ${data.task_id}`);
+                    document.getElementById('task-title').value = '';
+                    document.getElementById('task-desc').value = '';
+                    document.getElementById('task-max-score').value = '100.0';
+                    fetchTasks(selectedContestId);
+                } else {
+                    log(`Failed to add task: ${data.detail}`, 'error');
+                }
+            } catch (err) {
+                log('Network error adding task: ' + err.message, 'error');
+            }
+        }
+
+        // Delete task
+        async function deleteTask(taskId) {
+            if (!confirm("Delete this task? All submissions referencing this task will also be deleted.")) return;
+            log(`Deleting task #${taskId}...`, 'info');
+            try {
+                const response = await fetch(`/tasks/${taskId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    log('Task successfully deleted!');
+                    fetchTasks(selectedContestId);
+                    fetchLeaderboard();
+                } else {
+                    log('Task deletion failed: ' + data.detail, 'error');
+                }
+            } catch (err) {
+                log('Network error deleting task: ' + err.message, 'error');
+            }
+        }
+
+        // Host a contest
+        async function handleCreateContest(event) {
+            event.preventDefault();
+            const title = document.getElementById('new-title').value;
+            const strategy = document.getElementById('new-strategy').value;
+            const start = new Date(document.getElementById('new-start').value).toISOString();
+            const freeze = new Date(document.getElementById('new-freeze').value).toISOString();
+            const end = new Date(document.getElementById('new-end').value).toISOString();
+            const code = document.getElementById('new-code').value || null;
+            const judging = document.getElementById('new-judging').value;
+
+            log(`Submitting new contest '${title}' for developer approval...`, 'info');
+            try {
+                const response = await fetch('/contests', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        title,
+                        ranking_strategy: strategy,
+                        start_time: start,
+                        freeze_time: freeze,
+                        end_time: end,
+                        invitation_code: code,
+                        judging_description: judging
+                    })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    log(`Contest created! ID: ${data.contest_id}. Awaiting developer approval.`);
+                    document.getElementById('new-title').value = '';
+                    document.getElementById('new-code').value = '';
+                    document.getElementById('new-judging').value = '';
+                    loadContests();
+                } else {
+                    log(`Creation failed: ${data.detail}`, 'error');
+                }
+            } catch (err) {
+                log('Network error creating contest: ' + err.message, 'error');
+            }
+        }
+
+        // Fetch standings
         async function fetchLeaderboard() {
-            const contestId = document.getElementById("contest-select").value;
+            if (!selectedContestId) return;
             const asAdmin = document.getElementById("as-admin-check").checked;
             
             try {
-                const response = await fetch(`/contests/${contestId}/leaderboard?as_admin=${asAdmin}`);
+                const response = await fetch(`/contests/${selectedContestId}/leaderboard?as_admin=${asAdmin}`);
                 const data = await response.json();
                 
-                if (!response.ok) {
-                    throw new Error(data.detail || "Failed to fetch standings");
-                }
+                if (!response.ok) throw new Error(data.detail || "Failed to fetch standings");
 
                 const tbody = document.getElementById("leaderboard-body");
                 tbody.innerHTML = "";
@@ -575,7 +1231,7 @@
                     tr.innerHTML = `
                         <td><span class="rank-badge ${rankClass}">${rankContent}</span></td>
                         <td>${row.username}</td>
-                        <td><strong style="color:var(--text-primary);">${row.total_score.toFixed(2)}</strong></td>
+                        <td style="text-align: right;"><strong style="color:var(--text-primary);">${row.total_score.toFixed(2)}</strong></td>
                     `;
                     tbody.appendChild(tr);
                 });
@@ -584,13 +1240,31 @@
             }
         }
 
+        // Auto template based on contest strategies
+        function updatePayloadTemplate() {
+            const textarea = document.getElementById("payload-data");
+            const taskSelect = document.getElementById("submit-task-select");
+            const taskText = taskSelect.options[taskSelect.selectedIndex]?.text || '';
+            
+            if (taskText.toLowerCase().includes('speed') || taskText.toLowerCase().includes('run')) {
+                textarea.value = JSON.stringify({ "run_time_seconds": 38.5, "restarts": 0 }, null, 2);
+            } else {
+                textarea.value = JSON.stringify({ "score": 95.0, "verdict": "AC" }, null, 2);
+            }
+        }
+
+        // Submit payload
         async function submitPayload() {
             if (!authToken) {
                 log("Error: You must be logged in to submit payloads.", 'error');
                 return;
             }
 
-            const contestId = parseInt(document.getElementById("contest-select").value);
+            const taskId = parseInt(document.getElementById("submit-task-select").value);
+            if (!taskId) {
+                alert("Please select a valid task to submit!");
+                return;
+            }
             const textareaVal = document.getElementById("payload-data").value;
 
             let subData;
@@ -601,7 +1275,7 @@
                 return;
             }
 
-            log(`Submitting telemetries for contest #${contestId} in name of '${currentUser.username}'...`, 'info');
+            log(`Submitting telemetry for task #${taskId} in the name of '${currentUser.username}'...`, 'info');
 
             try {
                 const response = await fetch("/submissions", {
@@ -611,7 +1285,8 @@
                         "Authorization": `Bearer ${authToken}`
                     },
                     body: JSON.stringify({
-                        contest_id: contestId,
+                        contest_id: selectedContestId,
+                        task_id: taskId,
                         submission_data: subData
                     })
                 });
@@ -620,7 +1295,7 @@
 
                 if (response.status === 201) {
                     log(`Success! Submission #${resData.submission_id} received. Queued at: ${resData.submitted_at}`);
-                    log("Worker will process this soon. Refreshing standings in 3 seconds...", 'info');
+                    log("Worker will process this soon. Standings will auto-refresh in 3 seconds...", 'info');
                     setTimeout(() => {
                         fetchLeaderboard();
                         log("Refreshed standings leaderboard.");
@@ -633,10 +1308,85 @@
             }
         }
 
+        // Role management loading
+        async function loadContestMembers(contestId) {
+            try {
+                const response = await fetch(`/contests/${contestId}/members`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const members = await response.json();
+                
+                const list = document.getElementById('members-list');
+                list.innerHTML = '';
+
+                members.forEach(member => {
+                    const row = document.createElement('div');
+                    row.style = 'display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.01); padding:6px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.03);';
+                    
+                    row.innerHTML = `
+                        <span>${member.username}</span>
+                        <span class="badge ${member.role === 'HOST' ? 'badge-role' : member.role === 'MODERATOR' ? 'badge-active' : 'badge-pending'}" style="margin-left:auto; margin-right:10px;">${member.role}</span>
+                    `;
+                    list.appendChild(row);
+                });
+            } catch (err) {
+                log('Error loading members: ' + err.message, 'error');
+            }
+        }
+
+        async function loadAllUsers() {
+            if (!authToken) return;
+            try {
+                const response = await fetch('/users', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                usersList = await response.json();
+                
+                const select = document.getElementById('role-user-select');
+                select.innerHTML = '';
+                
+                usersList.forEach(u => {
+                    const opt = document.createElement('option');
+                    opt.value = u.id;
+                    opt.innerText = u.username;
+                    select.appendChild(opt);
+                });
+            } catch (err) {
+                log('Error fetching system users: ' + err.message, 'error');
+            }
+        }
+
+        async function handleUpdateRole() {
+            const targetUserId = parseInt(document.getElementById('role-user-select').value);
+            const newRole = document.getElementById('role-select').value;
+            
+            log(`Updating user role in contest...`, 'info');
+            try {
+                const response = await fetch(`/contests/${selectedContestId}/members/role`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ target_user_id: targetUserId, new_role: newRole })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    log('User role updated successfully!');
+                    loadContestMembers(selectedContestId);
+                    loadContests(); // Reload roles badge
+                } else {
+                    log('Role update failed: ' + data.detail, 'error');
+                }
+            } catch (err) {
+                log('Network error updating role: ' + err.message, 'error');
+            }
+        }
+
         // Initialize dashboard
-        log("Started skeleton UI dashboard. Active & connected.");
+        log("Started premium interactive dashboard. Active & connected.");
         verifyToken();
-        updatePayloadTemplate();
     </script>
 </body>
 </html>
