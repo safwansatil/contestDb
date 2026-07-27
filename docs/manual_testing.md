@@ -4,22 +4,10 @@ This guide details the step-by-step instructions to initialize, run, and manuall
 
 ---
 
-## 1. Database Setup & Initialization
-Since we are using **Neon Serverless PostgreSQL** as our database engine, follow these steps to initialize your schema:
+## 1. Initialization
 
-1. **Get Connection String**:
-   Log in to your Neon console, create or select your project, and copy your connection string (e.g., `postgresql://user:pass@ep-cool-snowflake-123456.neon.tech/neondb?sslmode=require`).
-2. **Setup Global `.env`**:
+1. **Setup Global `.env`**:
    At the project root directory, create a `.env` file using [.env.example](.env.example) as a template. Paste your connection URL into `DATABASE_URL`.
-3. **Execute SQL scripts on Neon**:
-   Instead of copy-pasting code into Neon's online interface, you can run our automated script from the root directory:
-   ```bash
-   python database/setup_db.py
-   ```
-   *This script reads your database URL and automatically runs the database files in the correct sequence:*
-   * [database/init.sql](database/init.sql) (creates tables and indexes).
-   * [database/procedures.sql](database/procedures.sql) (creates queue lock & dynamic leaderboard logic).
-   * [database/seed.sql](database/seed.sql) (populates initial contests, users, and submissions).
 
 ---
 
@@ -51,90 +39,108 @@ Open two terminals on your machine:
 ## 3. Step-by-Step Test Scenarios
 
 ### Option A: Testing via the Frontend Dashboard (Recommended)
-FastAPI serves an upgraded premium contest dashboard at the root URL.
+FastAPI serves the premium contest dashboard at the root URL.
 1. Open your browser and navigate to `http://127.0.0.1:8000`.
-2. **Access State**: The dashboard starts in **Guest Mode**. You can see the scoreboard standings but cannot submit payloads.
+2. **Access State**: The dashboard starts in **Guest Mode**. You can see the scoreboard standings but cannot submit payloads or modify anything.
 3. **Log In**: 
-   * In the Sign In tab, enter one of the seeded user credentials:
+   * In the Sign In tab, enter seeded user credentials:
      * Username: `sayma`
      * Password: `password123`
    * Click **Sign In**.
-   * Note the header updates to show "Hello, sayma" and the submission card appears.
-4. **Submit a Payload**:
-   * Select Contest: **Contest 2** ("Accumulator Math Quiz", which uses the `SUM` strategy).
-   * Note that there is no user dropdown. The backend will natively resolve you as `sayma`.
-   * Keep the default JSON payload: `{"score": 95.0, "verdict": "ROUND_2_SUCCESS"}`
-   * Click **Submit to Database Queue**.
-5. **Watch the Loop in Real-time**:
-   * Look at your **Worker Terminal** (Terminal 2). You will instantly see the worker lock the submission, evaluate the payload, and write back the scores to Neon.
-   * Look at the browser log feed. After a 3-second delay, the dashboard will refresh.
-   * Sayma will now rank 1st with a total score of `95.0` on the standings table!
-6. **Test Scoreboard Freeze**:
-   * Switch the Contest dropdown to **Contest 1** ("Max Speed Run" - Currently Frozen).
-   * Note the rankings: Sayma has `75.0` and Nondiny has `60.0`.
-   * Check the checkbox **"View Standings as Admin (Bypass Scoreboard Freeze)"**.
-   * Note that the scoreboard updates instantly to show the true scores including post-freeze runs: Sayma has `90.0` and Nondiny has `85.0`.
-7. **Log Out**:
-   * Click **Sign Out** in the header. The system clears your token, returning to Guest Mode and hiding the submission panel.
+   * Note the header updates to show "Hello, sayma".
+4. **Test Contest Creation & Approval Workflow**:
+   * On the left panel under "Host New Contest", fill in:
+     * Title: `LFR Speed Run 2026`
+     * Strategy: `MAX`
+     * Start/Freeze/End times (e.g. set Start/Freeze/End to today's date/times).
+     * Invitation Code: `joinlfr`
+     * Judging Logic: `Speed run of line follower. Deduct 2 points per restart from base 100.`
+   * Click **Create & Submit for Approval**.
+   * Note in the contest list, the new contest appears with a yellow `PENDING_APPROVAL` badge.
+   * Click on the new contest. Note that a purple button **"Approve Contest (Dev Action)"** appears.
+   * Click **Approve Contest (Dev Action)**. The status immediately updates to `ACTIVE` (green badge).
+5. **Test Task Management**:
+   * Since Sayma is the creator, she is enrolled as the `HOST` of `LFR Speed Run 2026`.
+   * The **"Add Task to Contest"** form is now visible.
+   * Add a new task:
+     * Title: `Problem A: Line Follower Obstacle Avoidance`
+     * Description: `Follow the line while avoiding obstacles. Time limit: 120 seconds.`
+     * Max Score: `100.0`
+   * Click **Add Task**. It will appear instantly under the contest's task list.
+6. **Test Role Management & Invitation Codes**:
+   * Log out from Sayma, and sign in as `nondiny` / `password123`.
+   * Click on the new contest `LFR Speed Run 2026` from the list. Note that Nondiny is listed as `Unenrolled`.
+   * Click **Join Contest**. A modal pops up asking for the invitation code.
+   * Enter an incorrect code first and submit -> an error is logged in the feed.
+   * Enter the correct code `joinlfr` and submit -> registration succeeds, and Nondiny is enrolled as a `PARTICIPANT`.
+   * Switch the dropdown in the submission panel to the new task `Problem A: Line Follower Obstacle Avoidance` and submit telemetry: `{"run_time_seconds": 45.0, "restarts": 1}`.
+   * In the worker terminal, you will see the worker successfully claim and judge this submission. Standings will refresh with the new score.
+   * Switch back to `sayma` / `password123` (who is the `HOST`).
+   * Scroll to the **Contest Role Manager** card. Select `nondiny` from the dropdown and promote her to `MODERATOR`.
+   * Click **Update Role**. Check the "Current Members" list to verify that Nondiny is now a `MODERATOR`.
 
 ---
 
 ### Option B: Testing via Terminal (Curl)
 
-#### Scenario A: Testing Standings & Authenticated Submissions (POINTS_SUM)
-We use Contest 2 (Quiz, active and unfrozen):
-1. **Verify Initial Standings**:
-   ```bash
-   curl http://127.0.0.1:8000/contests/2/leaderboard
-   ```
-2. **Authenticate to Obtain Token**:
-   Authenticate as Sayma (`password123`):
-   ```bash
-   curl -X POST http://127.0.0.1:8000/auth/login \
-        -H "Content-Type: application/json" \
-        -d '{"username": "sayma", "password": "password123"}'
-   ```
-   *Expected Response:* Returns `access_token` and user details. Copy the token.
-3. **Submit telemetry via Bearer Token**:
-   ```bash
-   curl -X POST http://127.0.0.1:8000/submissions \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer <your_access_token>" \
-        -d '{"contest_id": 2, "submission_data": {"run_time_seconds": 45.0, "restarts": 1}}'
-   ```
-   *Note: We no longer supply "user_id" in the JSON payload body. The API gateway automatically resolves it from the token.*
-4. **Verify Standings Update**:
-   ```bash
-   curl http://127.0.0.1:8000/contests/2/leaderboard
-   ```
-   *Expected Response:* Standings table updates with Sayma's LFR score (`50.0` added to standings).
+#### 1. Create Contest (Starts as PENDING_APPROVAL)
+Log in as `sayma` to get the access token, then:
+```bash
+curl -X POST http://127.0.0.1:8000/contests \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <your_access_token>" \
+     -d '{
+       "title": "Robotics Challenge",
+       "ranking_strategy": "SUM",
+       "start_time": "2026-07-27T15:00:00Z",
+       "freeze_time": "2026-07-27T17:00:00Z",
+       "end_time": "2026-07-27T18:00:00Z",
+       "invitation_code": "secretcode",
+       "judging_description": "Score is points sum"
+     }'
+```
+*Expected Response:* Returns `contest_id` and a pending approval message.
 
-5. **Test Enrollment Control**:
-   Attempt to submit to Contest 1 using Tabib's token (Tabib is not enrolled in Contest 1):
-   * Authenticate Tabib first:
-     ```bash
-     curl -X POST http://127.0.0.1:8000/auth/login \
-          -H "Content-Type: application/json" \
-          -d '{"username": "tabib", "password": "password123"}'
-     ```
-   * Submit to Contest 1 with Tabib's token:
-     ```bash
-     curl -X POST http://127.0.0.1:8000/submissions \
-          -H "Content-Type: application/json" \
-          -H "Authorization: Bearer <tabib_access_token>" \
-          -d '{"contest_id": 1, "submission_data": {"score": 100}}'
-     ```
-     *Expected Response:* HTTP 403 Forbidden.
+#### 2. Approve Contest (Developer/Admin Action)
+```bash
+curl -X POST http://127.0.0.1:8000/contests/<contest_id>/approve \
+     -H "Authorization: Bearer <your_access_token>"
+```
+*Expected Response:* Returns message indicating the contest is active.
 
-#### Scenario B: Testing Scoreboard Freeze & Admin Override (MAX)
-We use Contest 1 (Max Speed Run, currently frozen):
-1. **Check Public (Frozen) Leaderboard**:
-   ```bash
-   curl http://127.0.0.1:8000/contests/1/leaderboard
-   ```
-   *Expected Response:* Shows scores before freeze (Sayma: 75.0, Nondiny: 60.0).
-2. **Check Admin (Unfrozen) Leaderboard**:
-   ```bash
-   curl "http://127.0.0.1:8000/contests/1/leaderboard?as_admin=true"
-   ```
-   *Expected Response:* Shows true post-freeze scores (Sayma: 90.0, Nondiny: 85.0).
+#### 3. Add Task to Contest
+```bash
+curl -X POST http://127.0.0.1:8000/contests/<contest_id>/tasks \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <your_access_token>" \
+     -d '{
+       "title": "Speed Test",
+       "description": "Drive as fast as possible on the track",
+       "max_score": 100
+     }'
+```
+*Expected Response:* Returns `task_id` and success message.
+
+#### 4. Enroll in Contest with Invitation Code
+Log in as another user (e.g. `satil` / `password123`) to get a token, then join:
+```bash
+curl -X POST http://127.0.0.1:8000/contests/<contest_id>/enroll \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <satil_access_token>" \
+     -d '{"invitation_code": "secretcode"}'
+```
+*Expected Response:* Returns enrollment success.
+
+#### 5. Promote Participant to Moderator (Host Action)
+Log back in as `sayma` and update Satil's role:
+```bash
+curl -X POST http://127.0.0.1:8000/contests/<contest_id>/members/role \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <sayma_access_token>" \
+     -d '{
+       "target_user_id": 3,
+       "new_role": "MODERATOR"
+     }'
+```
+*Expected Response:* Role updated success.
+
