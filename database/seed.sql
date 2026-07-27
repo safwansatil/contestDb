@@ -62,6 +62,36 @@ INSERT INTO submissions (contest_id, user_id, task_id, submission_data, status, 
 INSERT INTO submissions (contest_id, user_id, task_id, submission_data, status, score, verdict, submitted_at, judged_at, judged_by) VALUES 
 (1, 2, 1, '{"run_time_seconds": 10.1, "restarts": 0}'::jsonb, 'COMPLETED', 85, 'RUN_SUCCESS', NOW() - INTERVAL '15 minutes', NOW() - INTERVAL '14 minutes', 'worker-1');
 
+-- Additional historical submissions for activity graph and progression tests
+-- Satil (3) submissions in Contest 1 (Max Speed Run)
+INSERT INTO submissions (contest_id, user_id, task_id, submission_data, status, score, verdict, submitted_at, judged_at, judged_by) VALUES 
+(1, 3, 1, '{"run_time_seconds": 25.0, "restarts": 2}'::jsonb, 'COMPLETED', 65, 'RUN_SUCCESS', NOW() - INTERVAL '1 hour 45 minutes', NOW() - INTERVAL '1 hour 44 minutes', 'worker-1'),
+(1, 3, 1, '{"run_time_seconds": 18.0, "restarts": 0}'::jsonb, 'COMPLETED', 82, 'RUN_SUCCESS', NOW() - INTERVAL '1 hour 5 minutes', NOW() - INTERVAL '1 hour 4 minutes', 'worker-1'),
+(1, 3, 1, '{"run_time_seconds": 8.0, "restarts": 0}'::jsonb, 'COMPLETED', 92, 'RUN_SUCCESS', NOW() - INTERVAL '10 minutes', NOW() - INTERVAL '9 minutes', 'worker-1');
+
+-- Contest 2 (Quiz) Submissions:
+-- Sayma (1) submissions
+INSERT INTO submissions (contest_id, user_id, task_id, submission_data, status, score, verdict, submitted_at, judged_at, judged_by) VALUES 
+(2, 1, 2, '{"score": 90.0, "verdict": "ACCEPTED"}'::jsonb, 'COMPLETED', 90, 'ACCEPTED', NOW() - INTERVAL '25 minutes', NOW() - INTERVAL '24 minutes', 'worker-2');
+
+-- Nondiny (2) submissions
+INSERT INTO submissions (contest_id, user_id, task_id, submission_data, status, score, verdict, submitted_at, judged_at, judged_by) VALUES 
+(2, 2, 2, '{"score": 45.0, "verdict": "PARTIAL"}'::jsonb, 'COMPLETED', 45, 'PARTIAL', NOW() - INTERVAL '20 minutes', NOW() - INTERVAL '19 minutes', 'worker-2'),
+(2, 2, 2, '{"score": 85.0, "verdict": "ACCEPTED"}'::jsonb, 'COMPLETED', 85, 'ACCEPTED', NOW() - INTERVAL '5 minutes', NOW() - INTERVAL '4 minutes', 'worker-2');
+
+-- Tabib (4) submissions
+INSERT INTO submissions (contest_id, user_id, task_id, submission_data, status, score, verdict, submitted_at, judged_at, judged_by) VALUES 
+(2, 4, 2, '{"score": 70.0, "verdict": "ACCEPTED"}'::jsonb, 'COMPLETED', 70, 'ACCEPTED', NOW() - INTERVAL '18 minutes', NOW() - INTERVAL '17 minutes', 'worker-2');
+
+-- Out-of-contest submissions for users (general activity stats)
+INSERT INTO submissions (contest_id, user_id, task_id, submission_data, status, score, verdict, submitted_at, judged_at, judged_by) VALUES 
+(1, 1, 1, '{"score": 50.0}'::jsonb, 'COMPLETED', 50, 'ACCEPTED', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day', 'worker-default'),
+(1, 1, 1, '{"score": 75.0}'::jsonb, 'COMPLETED', 75, 'ACCEPTED', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', 'worker-default'),
+(1, 2, 1, '{"score": 80.0}'::jsonb, 'COMPLETED', 80, 'ACCEPTED', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', 'worker-default'),
+(1, 3, 1, '{"score": 60.0}'::jsonb, 'COMPLETED', 60, 'ACCEPTED', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days', 'worker-default'),
+(1, 3, 1, '{"score": 70.0}'::jsonb, 'COMPLETED', 70, 'ACCEPTED', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days', 'worker-default'),
+(1, 4, 1, '{"score": 90.0}'::jsonb, 'COMPLETED', 90, 'ACCEPTED', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days', 'worker-default');
+
 -- Sync SERIAL sequences to prevent duplicate key errors on future inserts
 SELECT setval('contests_id_seq', COALESCE((SELECT MAX(id) FROM contests), 1));
 SELECT setval('users_id_seq', COALESCE((SELECT MAX(id) FROM users), 1));

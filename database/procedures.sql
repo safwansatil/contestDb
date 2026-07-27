@@ -479,3 +479,371 @@ BEGIN
     DO UPDATE SET role = EXCLUDED.role;
 END;
 $$ LANGUAGE plpgsql;
+
+-- J. Fetch User Profile Statistics (Database-Native)
+CREATE OR REPLACE FUNCTION get_user_profile_stats(p_user_id INT)
+RETURNS TABLE (
+    total_submissions INT,
+    total_contests_joined INT,
+    unique_tasks_attempted INT,
+    fully_completed_tasks INT,
+    average_score NUMERIC,
+    max_score_single NUMERIC,
+    verdict_breakdown JSONB
+) AS $$
+DECLARE
+    v_total_subs INT;
+    v_total_contests INT;
+    v_tasks_attempted INT;
+    v_completed_tasks INT;
+    v_avg_score NUMERIC;
+    v_max_score NUMERIC;
+    v_verdicts JSONB;
+BEGIN
+    -- Total submissions
+    SELECT COUNT(*)::INT INTO v_total_subs FROM submissions WHERE user_id = p_user_id;
+
+    -- Total contests joined
+    SELECT COUNT(DISTINCT contest_id)::INT INTO v_total_contests FROM enrollments WHERE user_id = p_user_id;
+
+    -- Unique tasks attempted
+    SELECT COUNT(DISTINCT task_id)::INT INTO v_tasks_attempted FROM submissions WHERE user_id = p_user_id AND task_id IS NOT NULL;
+
+    -- Fully completed tasks (where score >= task's max_score)
+    SELECT COUNT(DISTINCT s.task_id)::INT INTO v_completed_tasks
+    FROM submissions s
+    JOIN tasks t ON s.task_id = t.id
+    WHERE s.user_id = p_user_id AND s.score >= t.max_score AND s.status = 'COMPLETED';
+
+    -- Average score
+    SELECT COALESCE(AVG(score), 0)::NUMERIC(10,2) INTO v_avg_score FROM submissions WHERE user_id = p_user_id AND status = 'COMPLETED';
+
+    -- Max score
+    SELECT COALESCE(MAX(score), 0)::NUMERIC(10,2) INTO v_max_score FROM submissions WHERE user_id = p_user_id AND status = 'COMPLETED';
+
+    -- Verdict breakdown as JSONB
+    SELECT COALESCE(jsonb_object_agg(COALESCE(verdict, 'UNKNOWN'), cnt), '{}'::jsonb)
+    INTO v_verdicts
+    FROM (
+        SELECT verdict, COUNT(*)::INT as cnt
+        FROM submissions
+        WHERE user_id = p_user_id AND status = 'COMPLETED'
+        GROUP BY verdict
+    ) q;
+
+    RETURN QUERY SELECT v_total_subs, v_total_contests, v_tasks_attempted, v_completed_tasks, v_avg_score, v_max_score, v_verdicts;
+END;
+$$ LANGUAGE plpgsql;
+
+-- K. Fetch User Activity Graph (Submissions Count by Date)
+CREATE OR REPLACE FUNCTION get_user_activity_graph(p_user_id INT)
+RETURNS TABLE (
+    activity_date DATE,
+    submission_count INT
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT DATE(submitted_at AT TIME ZONE 'UTC') AS act_date, COUNT(*)::INT
+    FROM submissions
+    WHERE user_id = p_user_id
+    GROUP BY act_date
+    ORDER BY act_date ASC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- L. Fetch User Contest Participation History
+CREATE OR REPLACE FUNCTION get_user_contest_history(p_user_id INT)
+RETURNS TABLE (
+    contest_id INT,
+    contest_title VARCHAR,
+    role VARCHAR,
+    registered_at TIMESTAMP WITH TIME ZONE,
+    total_score NUMERIC,
+    rank INT
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH enrolled_contests AS (
+        SELECT e.contest_id, c.title, e.role, e.registered_at
+        FROM enrollments e
+        JOIN contests c ON e.contest_id = c.id
+        WHERE e.user_id = p_user_id
+    ),
+    contest_standings AS (
+        SELECT 
+            ec.contest_id,
+            l.user_id,
+            l.total_score,
+            l.rank
+        FROM enrolled_contests ec
+        CROSS JOIN LATERAL get_leaderboard(ec.contest_id, TRUE) l
+    )
+    SELECT 
+        ec.contest_id,
+        ec.title AS contest_title,
+        ec.role,
+        ec.registered_at,
+        CASE WHEN ec.role = 'PARTICIPANT' THEN cs.total_score ELSE NULL END AS total_score,
+        CASE WHEN ec.role = 'PARTICIPANT' THEN cs.rank ELSE NULL END AS rank
+    FROM enrolled_contests ec
+    LEFT JOIN contest_standings cs ON ec.contest_id = cs.contest_id AND cs.user_id = p_user_id
+    ORDER BY ec.registered_at DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- M. Fetch User Submission History
+CREATE OR REPLACE FUNCTION get_user_submission_history(p_user_id INT, p_limit INT DEFAULT 20)
+RETURNS TABLE (
+    submission_id INT,
+    contest_id INT,
+    contest_title VARCHAR,
+    task_id INT,
+    task_title VARCHAR,
+    score NUMERIC,
+    verdict VARCHAR,
+    submitted_at TIMESTAMP WITH TIME ZONE
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        s.id,
+        s.contest_id,
+        c.title AS contest_title,
+        s.task_id,
+        t.title AS task_title,
+        s.score,
+        s.verdict,
+        s.submitted_at
+    FROM submissions s
+    LEFT JOIN contests c ON s.contest_id = c.id
+    LEFT JOIN tasks t ON s.task_id = t.id
+    WHERE s.user_id = p_user_id
+    ORDER BY s.submitted_at DESC
+    LIMIT p_limit;
+END;
+$$ LANGUAGE plpgsql;
+
+-- N. Fetch Contest-Wide Statistics (With scoreboard freeze rules)
+CREATE OR REPLACE FUNCTION get_contest_statistics(p_contest_id INT, p_as_admin BOOLEAN DEFAULT FALSE)
+RETURNS TABLE (
+    total_participants INT,
+    active_participants INT,
+    total_submissions INT,
+    task_stats JSONB
+) AS $$
+DECLARE
+    v_start_time TIMESTAMP WITH TIME ZONE;
+    v_freeze_time TIMESTAMP WITH TIME ZONE;
+    v_end_time TIMESTAMP WITH TIME ZONE;
+    v_effective_freeze TIMESTAMP WITH TIME ZONE;
+    v_total_parts INT;
+    v_active_parts INT;
+    v_total_subs INT;
+    v_task_stats JSONB;
+BEGIN
+    SELECT start_time, freeze_time, end_time INTO v_start_time, v_freeze_time, v_end_time
+    FROM contests WHERE id = p_contest_id;
+    
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Contest with ID % not found', p_contest_id;
+    END IF;
+
+    IF p_as_admin OR NOW() >= v_end_time THEN
+        v_effective_freeze := v_end_time;
+    ELSE
+        v_effective_freeze := v_freeze_time;
+    END IF;
+
+    -- Total participants (enrolled with role = 'PARTICIPANT')
+    SELECT COUNT(*)::INT INTO v_total_parts 
+    FROM enrollments 
+    WHERE contest_id = p_contest_id AND role = 'PARTICIPANT';
+
+    -- Active participants (submitted at least once before freeze)
+    SELECT COUNT(DISTINCT user_id)::INT INTO v_active_parts
+    FROM submissions
+    WHERE contest_id = p_contest_id 
+      AND submitted_at >= v_start_time 
+      AND submitted_at < v_effective_freeze;
+
+    -- Total submissions before freeze
+    SELECT COUNT(*)::INT INTO v_total_subs
+    FROM submissions
+    WHERE contest_id = p_contest_id
+      AND submitted_at >= v_start_time
+      AND submitted_at < v_effective_freeze;
+
+    -- Task-by-task statistics
+    SELECT COALESCE(jsonb_agg(t_row), '[]'::jsonb) INTO v_task_stats
+    FROM (
+        SELECT 
+            t.id AS task_id,
+            t.title AS task_title,
+            t.max_score,
+            COALESCE(AVG(s.score), 0)::NUMERIC(10,2) AS avg_score,
+            COALESCE(MAX(s.score), 0)::NUMERIC(10,2) AS max_score_achieved,
+            COUNT(s.id)::INT AS total_attempts,
+            COUNT(DISTINCT CASE WHEN s.score >= t.max_score THEN s.user_id END)::INT AS solved_users
+        FROM tasks t
+        LEFT JOIN submissions s ON t.id = s.task_id 
+          AND s.submitted_at >= v_start_time 
+          AND s.submitted_at < v_effective_freeze
+          AND s.status = 'COMPLETED'
+        WHERE t.contest_id = p_contest_id
+        GROUP BY t.id, t.title, t.max_score
+        ORDER BY t.id ASC
+    ) t_row;
+
+    RETURN QUERY SELECT v_total_parts, v_active_parts, v_total_subs, v_task_stats;
+END;
+$$ LANGUAGE plpgsql;
+
+-- O. Fetch Contest Submission Timeline Chart Data
+CREATE OR REPLACE FUNCTION get_contest_submission_timeline(p_contest_id INT, p_as_admin BOOLEAN DEFAULT FALSE)
+RETURNS TABLE (
+    bucket_start TIMESTAMP WITH TIME ZONE,
+    submission_count INT
+) AS $$
+DECLARE
+    v_start TIMESTAMP WITH TIME ZONE;
+    v_end TIMESTAMP WITH TIME ZONE;
+    v_freeze TIMESTAMP WITH TIME ZONE;
+    v_effective_freeze TIMESTAMP WITH TIME ZONE;
+    v_duration_hours NUMERIC;
+    v_stride INTERVAL;
+BEGIN
+    SELECT start_time, freeze_time, end_time INTO v_start, v_freeze, v_end
+    FROM contests WHERE id = p_contest_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Contest not found';
+    END IF;
+
+    IF p_as_admin OR NOW() >= v_end THEN
+        v_effective_freeze := v_end;
+    ELSE
+        v_effective_freeze := v_freeze;
+    END IF;
+
+    v_duration_hours := EXTRACT(EPOCH FROM (v_end - v_start)) / 3600;
+
+    IF v_duration_hours <= 6 THEN
+        v_stride := INTERVAL '10 minutes';
+    ELSIF v_duration_hours <= 24 THEN
+        v_stride := INTERVAL '30 minutes';
+    ELSIF v_duration_hours <= 168 THEN -- 7 days
+        v_stride := INTERVAL '3 hours';
+    ELSE
+        v_stride := INTERVAL '1 day';
+    END IF;
+
+    RETURN QUERY
+    SELECT 
+        date_bin(v_stride, submitted_at, v_start) AS b_start,
+        COUNT(*)::INT
+    FROM submissions
+    WHERE contest_id = p_contest_id
+      AND submitted_at >= v_start
+      AND submitted_at < v_effective_freeze
+    GROUP BY b_start
+    ORDER BY b_start ASC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- P. Fetch Participant Score Cumulative Progression
+CREATE OR REPLACE FUNCTION get_participant_score_progression(p_contest_id INT, p_user_id INT)
+RETURNS TABLE (
+    submitted_at TIMESTAMP WITH TIME ZONE,
+    running_score NUMERIC
+) AS $$
+DECLARE
+    v_strategy VARCHAR(30);
+    v_has_tasks BOOLEAN;
+BEGIN
+    SELECT ranking_strategy INTO v_strategy FROM contests WHERE id = p_contest_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Contest not found';
+    END IF;
+
+    SELECT EXISTS(SELECT 1 FROM tasks WHERE contest_id = p_contest_id) INTO v_has_tasks;
+
+    IF v_has_tasks THEN
+        IF v_strategy = 'MAX' THEN
+            RETURN QUERY
+            SELECT 
+                s.submitted_at,
+                (
+                    SELECT COALESCE(MAX(sub.score), 0)
+                    FROM submissions sub
+                    WHERE sub.contest_id = p_contest_id
+                      AND sub.user_id = p_user_id
+                      AND sub.status = 'COMPLETED'
+                      AND sub.submitted_at <= s.submitted_at
+                )::NUMERIC AS running_score
+            FROM submissions s
+            WHERE s.contest_id = p_contest_id
+              AND s.user_id = p_user_id
+              AND s.status = 'COMPLETED'
+            ORDER BY s.submitted_at ASC;
+        ELSE -- 'SUM' strategy: Sum of best score on each task up to that submission time
+            RETURN QUERY
+            SELECT 
+                s.submitted_at,
+                (
+                    SELECT COALESCE(SUM(best.max_score), 0)
+                    FROM (
+                        SELECT sub.task_id, MAX(sub.score) AS max_score
+                        FROM submissions sub
+                        WHERE sub.contest_id = p_contest_id
+                          AND sub.user_id = p_user_id
+                          AND sub.status = 'COMPLETED'
+                          AND sub.submitted_at <= s.submitted_at
+                        GROUP BY sub.task_id
+                    ) best
+                )::NUMERIC AS running_score
+            FROM submissions s
+            WHERE s.contest_id = p_contest_id
+              AND s.user_id = p_user_id
+              AND s.status = 'COMPLETED'
+            ORDER BY s.submitted_at ASC;
+        END IF;
+    ELSE
+        -- Fallback if no tasks exist
+        IF v_strategy = 'MAX' THEN
+            RETURN QUERY
+            SELECT 
+                s.submitted_at,
+                (
+                    SELECT COALESCE(MAX(sub.score), 0)
+                    FROM submissions sub
+                    WHERE sub.contest_id = p_contest_id
+                      AND sub.user_id = p_user_id
+                      AND sub.status = 'COMPLETED'
+                      AND sub.submitted_at <= s.submitted_at
+                )::NUMERIC AS running_score
+            FROM submissions s
+            WHERE s.contest_id = p_contest_id
+              AND s.user_id = p_user_id
+              AND s.status = 'COMPLETED'
+            ORDER BY s.submitted_at ASC;
+        ELSE
+            RETURN QUERY
+            SELECT 
+                s.submitted_at,
+                (
+                    SELECT COALESCE(SUM(sub.score), 0)
+                    FROM submissions sub
+                    WHERE sub.contest_id = p_contest_id
+                      AND sub.user_id = p_user_id
+                      AND sub.status = 'COMPLETED'
+                      AND sub.submitted_at <= s.submitted_at
+                )::NUMERIC AS running_score
+            FROM submissions s
+            WHERE s.contest_id = p_contest_id
+              AND s.user_id = p_user_id
+              AND s.status = 'COMPLETED'
+            ORDER BY s.submitted_at ASC;
+        END IF;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;

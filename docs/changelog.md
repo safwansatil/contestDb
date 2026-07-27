@@ -6,6 +6,21 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.4.0] - 2026-07-27 (User Profiles, History, Activity Graphs & Contest Insights)
+### Added
+* Implemented database-native stored PL/pgSQL functions for user statistics, activity graphs, contest history, and cumulative score timelines (`get_user_profile_stats`, `get_user_activity_graph`, `get_user_contest_history`, `get_user_submission_history`, `get_contest_statistics`, `get_contest_submission_timeline`, `get_participant_score_progression`).
+* Created backend API endpoints in [main.py](backend/app/main.py) to fetch profile metrics, participation histories, contest statistics, and user progression logs.
+* Added a new documentation file [docs/profiles_and_statistics.md](docs/profiles_and_statistics.md) detailing the profile/statistics database logic and implementation details.
+* Upgraded the frontend interface in [index.html](backend/app/static/index.html) to render user profiles inside a modal (with stats cards, activity timeline, verdict counts, and tables for contest/submission history).
+* Added click triggers to Standings ranks and Members lists to open profile modals.
+* Created a sub-tabs container inside contest details to toggle between Task lists and Contest Analytics summaries (total participants, active participants count, task success rates, and `date_bin` activity charts).
+* Added composite indexes on the `submissions` table inside [init.sql](database/init.sql) to optimize user and contest history lookups.
+* Created a server runner wrapper `backend/run_server.py` to configure uvicorn with Windows selector loop policies and bypass psycopg3 async connection failures on Windows.
+
+### Changed
+* Updated [seed.sql](database/seed.sql) to seed more realistic historical submissions over multiple days to populate profiles and activity timeline charts.
+* Updated [architecture_and_erd.md](docs/architecture_and_erd.md) and [manual_testing.md](docs/manual_testing.md) to align with schema indexes, statistics helper functions, and manual API curl instructions.
+
 ## [0.3.1] - 2026-07-27 (Sequence Sync & Custom Strategy Hotfix)
 ### Added
 * Created [docs/contests.md](docs/contests.md) detailing contest workflows, developer actions auditing procedures, seeded user roles mappings, and sequence out-of-sync troubleshooting.

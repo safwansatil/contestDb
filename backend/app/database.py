@@ -1,7 +1,13 @@
 import os
+import sys
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from dotenv import load_dotenv
+
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from psycopg_pool import AsyncConnectionPool
 
 # Resolve project root directory (three parents up from backend/app/database.py)
