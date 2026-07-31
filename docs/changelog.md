@@ -6,6 +6,16 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.5.1] - 2026-07-31 (Remove Contest Approval from API & GUI)
+### Removed
+* **`POST /contests/{id}/approve` endpoint** — removed from [main.py](backend/app/main.py) entirely. Contest approval is now a developer-only terminal action. Calling this endpoint will return 404. To approve a contest, connect to the database directly and run `SELECT approve_contest_native(<id>);` or `UPDATE contests SET status = 'ACTIVE' WHERE id = <id>;`.
+* **Approve Contest button** — removed from [index.html](backend/app/static/index.html). The `approveContest()` JS function has been deleted. PENDING_APPROVAL contests now display a styled info notice explaining how to approve via the terminal.
+
+### Changed
+* Updated [docs/manual_testing.md](docs/manual_testing.md) Section 1 (GUI) and Section 2 (curl) to reflect that approval is a terminal-only SQL operation.
+
+---
+
 ## [0.5.0] - 2026-07-31 (Contest Enhancements: Schemas, Capacity, Visibility, Kick & Announcements)
 ### Added
 * **Task Submission Schemas** — Added mandatory `submission_schema JSONB NOT NULL` column to the `tasks` table in [init.sql](database/init.sql). Every task must declare a schema describing the expected shape of `submission_data`. Created new DB function `validate_submission_schema_native(task_id, submission_data)` in [procedures.sql](database/procedures.sql) that hard-rejects (RAISE EXCEPTION) submissions failing schema validation. API calls this before inserting into the queue.

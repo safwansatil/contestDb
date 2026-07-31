@@ -59,8 +59,12 @@ FastAPI serves the premium contest dashboard at the root URL.
      * Judging Logic: `Speed run of line follower. Deduct 2 points per restart from base 100.`
    * Click **Create & Submit for Approval**.
    * Note in the contest list, the new contest appears with a yellow `PENDING_APPROVAL` badge.
-   * Click on the new contest. Note that a purple button **"Approve Contest (Dev Action)"** appears.
-   * Click **Approve Contest (Dev Action)**. The status immediately updates to `ACTIVE` (green badge).
+   * The contest card shows an info notice: **"Awaiting Developer Approval"** — no button is shown.
+   * To activate the contest, a developer must connect to the database directly in a terminal and run:
+     ```sql
+     SELECT approve_contest_native(<contest_id>);
+     ```
+   * After running the SQL, refresh the page. The status updates to `ACTIVE` (green badge).
 5. **Test Task Management**:
    * Since Sayma is the creator, she is enrolled as the `HOST` of `LFR Speed Run 2026`.
    * The **"Add Task to Contest"** form is now visible.
@@ -103,12 +107,20 @@ curl -X POST http://127.0.0.1:8000/contests \
 ```
 *Expected Response:* Returns `contest_id` and a pending approval message.
 
-#### 2. Approve Contest (Developer/Admin Action)
-```bash
-curl -X POST http://127.0.0.1:8000/contests/<contest_id>/approve \
-     -H "Authorization: Bearer <your_access_token>"
+#### 2. Approve Contest (Developer/Admin Terminal Action)
+
+> **This is intentionally NOT an API endpoint.** Approval must be done directly in the database.
+> The `/contests/{id}/approve` HTTP route has been removed by design.
+
+Connect to your PostgreSQL instance (e.g. via `psql` or the Neon console) and run:
+```sql
+-- Option A: via stored function
+SELECT approve_contest_native(<contest_id>);
+
+-- Option B: direct update
+UPDATE contests SET status = 'ACTIVE' WHERE id = <contest_id>;
 ```
-*Expected Response:* Returns message indicating the contest is active.
+*Expected:* The contest row's `status` changes to `ACTIVE`. The next `GET /contests` call will reflect the change.
 
 #### 3. Add Task to Contest
 ```bash
@@ -118,7 +130,13 @@ curl -X POST http://127.0.0.1:8000/contests/<contest_id>/tasks \
      -d '{
        "title": "Speed Test",
        "description": "Drive as fast as possible on the track",
-       "max_score": 100
+       "max_score": 100,
+       "submission_schema": {
+         "required_keys": ["run_time_seconds", "restarts"],
+         "numeric_keys": ["run_time_seconds", "restarts"]
+       },
+       "submission_cooldown_seconds": 0,
+       "task_order": 1
      }'
 ```
 *Expected Response:* Returns `task_id` and success message.

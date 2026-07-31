@@ -48,11 +48,12 @@ When a contest is created, it goes into the main `contests` table with the statu
    SELECT id, title, ranking_strategy, judging_description FROM contests WHERE status = 'PENDING_APPROVAL';
    ```
 2. **Code Implementation**: The developer reviews the requested `judging_description` and `ranking_strategy` (e.g. they might need to write a new stored function in `database/procedures.sql` to support a new score calculation formula, or extend the worker python code).
-3. **Approve / Release**: Once the developer implements and deploys the necessary features for the contest, they run the approval command (or invoke the frontend "Approve" button, which calls `POST /contests/{contest_id}/approve` and runs `approve_contest_native` natively):
+3. **Approve / Release**: Once the developer implements and deploys the necessary features for the contest, they connect to the database directly in a terminal and run:
    ```sql
    SELECT approve_contest_native(contest_id);
    ```
    This shifts the status to `'ACTIVE'`, making the contest live and open for enrollment.
+   > **Note:** Contest approval is intentionally not exposed as an API endpoint or GUI button. It is a developer-only terminal action by design.
 
 ### Coherent Logic: Blocking Submissions for Draft Contests
 To ensure a contest cannot accept submissions before the developer approves the logic and database support is complete:

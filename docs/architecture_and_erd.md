@@ -153,7 +153,9 @@ erDiagram
 * `status` (VARCHAR(30), DEFAULT 'PENDING_APPROVAL', NOT NULL): Approval status (`'PENDING_APPROVAL'`, `'ACTIVE'`, `'COMPLETED'`).
 * `judging_description` (TEXT): Description of the scoring and judging logic for the contest developer.
 * `invitation_code` (VARCHAR(50), NULLABLE): Invitation code needed to register for private contests.
-* *Constraints*: `chk_contest_times` checks that `freeze_time >= start_time AND end_time >= freeze_time`, and `chk_contest_status` validates status values.
+* `max_participants` (INT, NULLABLE): Enrollment cap. `NULL` = unlimited. When set, `enroll_in_contest()` uses `FOR UPDATE` locking to prevent race conditions at capacity.
+* `allow_late_enrollment` (BOOLEAN, DEFAULT TRUE, NOT NULL): If `FALSE`, enrollment is rejected after `start_time` has passed.
+* *Constraints*: `chk_contest_times` checks that `freeze_time >= start_time AND end_time >= freeze_time`, `chk_contest_status` validates status values, and `chk_max_participants` ensures `max_participants > 0` when set.
 
 #### `enrollments`
 * `contest_id` (INT, FOREIGN KEY, REFERENCES contests(id) ON DELETE CASCADE)
@@ -169,6 +171,9 @@ erDiagram
 * `title` (VARCHAR(100), NOT NULL): Task name.
 * `description` (TEXT, NOT NULL): Details/parameters of the task.
 * `max_score` (NUMERIC, DEFAULT 100): Maximum score obtainable.
+* `submission_schema` (JSONB, NOT NULL): Mandatory payload descriptor. Every task must declare a schema with `required_keys` and optionally `numeric_keys`. Validated by `validate_submission_schema_native()` before a submission is accepted.
+* `submission_cooldown_seconds` (INT, DEFAULT 0, NOT NULL): Minimum seconds a user must wait between submissions to this task. `0` = no cooldown.
+* `task_order` (INT, DEFAULT 0, NOT NULL): Display ordering index within the contest. Lower = shown first.
 * `created_at` (TIMESTAMP WITH TIME ZONE, DEFAULT NOW())
 
 #### `submissions`
