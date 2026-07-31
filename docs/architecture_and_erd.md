@@ -1,6 +1,6 @@
 # System Architecture & Entity Relationship Diagram (ERD)
 
-This document describes the current architecture and database design of the ContestDB **Walking Skeleton** (v0.1.3).
+This document describes the current architecture and database design of the ContestDB **Walking Skeleton** (v0.5.0).
 
 ---
 
@@ -56,6 +56,8 @@ erDiagram
         varchar status
         text judging_description
         varchar invitation_code
+        int max_participants
+        boolean allow_late_enrollment
     }
 
     enrollments {
@@ -71,6 +73,9 @@ erDiagram
         varchar title
         text description
         numeric max_score
+        jsonb submission_schema
+        int submission_cooldown_seconds
+        int task_order
         timestamp_with_tz created_at
     }
 
@@ -88,12 +93,46 @@ erDiagram
         varchar judged_by
     }
 
+    contest_visibility {
+        int contest_id PK,FK
+        boolean show_participant_count
+        boolean show_leaderboard
+        boolean show_member_list
+        boolean show_task_list
+        boolean show_statistics
+        boolean show_submission_count
+        timestamp_with_tz updated_at
+    }
+
+    kick_log {
+        int id PK
+        int contest_id FK
+        int kicked_user_id FK
+        int kicked_by FK
+        text reason
+        timestamp_with_tz kicked_at
+    }
+
+    contest_announcements {
+        int id PK
+        int contest_id FK
+        int author_id FK
+        varchar title
+        text body
+        timestamp_with_tz posted_at
+    }
+
     users ||--o{ enrollments : "registers"
     contests ||--o{ enrollments : "enrolls"
     users ||--o{ submissions : "submits"
     contests ||--o{ submissions : "contains"
     contests ||--o{ tasks : "contains"
     tasks ||--o{ submissions : "receives"
+    contests ||--|| contest_visibility : "has"
+    contests ||--o{ kick_log : "records"
+    contests ||--o{ contest_announcements : "publishes"
+    users ||--o{ kick_log : "was kicked"
+    users ||--o{ contest_announcements : "authors"
 ```
 
 ### Tables Specification:
@@ -114,7 +153,9 @@ erDiagram
 * `status` (VARCHAR(30), DEFAULT 'PENDING_APPROVAL', NOT NULL): Approval status (`'PENDING_APPROVAL'`, `'ACTIVE'`, `'COMPLETED'`).
 * `judging_description` (TEXT): Description of the scoring and judging logic for the contest developer.
 * `invitation_code` (VARCHAR(50), NULLABLE): Invitation code needed to register for private contests.
-* *Constraints*: `chk_contest_times` checks that `freeze_time >= start_time AND end_time >= freeze_time`, and `chk_contest_status` validates status values.
+* `max_participants` (INT, NULLABLE): Enrollment cap. `NULL` = unlimited. When set, `enroll_in_contest()` uses `FOR UPDATE` locking to prevent race conditions at capacity.
+* `allow_late_enrollment` (BOOLEAN, DEFAULT TRUE, NOT NULL): If `FALSE`, enrollment is rejected after `start_time` has passed.
+* *Constraints*: `chk_contest_times` checks that `freeze_time >= start_time AND end_time >= freeze_time`, `chk_contest_status` validates status values, and `chk_max_participants` ensures `max_participants > 0` when set.
 
 #### `enrollments`
 * `contest_id` (INT, FOREIGN KEY, REFERENCES contests(id) ON DELETE CASCADE)
@@ -130,6 +171,9 @@ erDiagram
 * `title` (VARCHAR(100), NOT NULL): Task name.
 * `description` (TEXT, NOT NULL): Details/parameters of the task.
 * `max_score` (NUMERIC, DEFAULT 100): Maximum score obtainable.
+* `submission_schema` (JSONB, NOT NULL): Mandatory payload descriptor. Every task must declare a schema with `required_keys` and optionally `numeric_keys`. Validated by `validate_submission_schema_native()` before a submission is accepted.
+* `submission_cooldown_seconds` (INT, DEFAULT 0, NOT NULL): Minimum seconds a user must wait between submissions to this task. `0` = no cooldown.
+* `task_order` (INT, DEFAULT 0, NOT NULL): Display ordering index within the contest. Lower = shown first.
 * `created_at` (TIMESTAMP WITH TIME ZONE, DEFAULT NOW())
 
 #### `submissions`
@@ -148,3 +192,39 @@ erDiagram
 * *Indices*: 
   - `idx_submissions_user_time` on `(user_id, submitted_at DESC)` (Optimizes user history timeline queries).
   - `idx_submissions_contest_time` on `(contest_id, submitted_at DESC)` (Optimizes contest submission timeline charting).
+
+---
+
+## 3. PL/pgSQL Function Catalogue (v0.5.0)
+
+| Function | Purpose |
+|---|---|
+| `claim_submission(worker_id)` | FOR UPDATE SKIP LOCKED queue claim |
+| `get_leaderboard(contest_id, as_admin)` | Time-aware dynamic leaderboard with freeze logic |
+| `register_user(username, password)` | pgcrypto bcrypt user registration |
+| `verify_user_credentials(username, password)` | pgcrypto bcrypt credential check |
+| `create_contest_native(...)` | Creates contest + auto-enrolls HOST + seeds visibility row |
+| `approve_contest_native(contest_id)` | Sets status to ACTIVE |
+| `update_contest_native(...)` | Updates contest parameters (HOST/MOD) |
+| `delete_contest_native(contest_id, user_id)` | Deletes contest (HOST only) |
+| `add_task_native(...)` | Adds task with schema to contest (HOST/MOD) |
+| `update_task_native(...)` | Updates task and schema (HOST/MOD) |
+| `delete_task_native(task_id, user_id)` | Deletes task (HOST/MOD) |
+| `enroll_in_contest(contest_id, user_id, code)` | Race-safe enrollment with cap, late, and ban checks |
+| `update_contest_member_role(...)` | Updates a member's role (HOST only) |
+| `validate_submission_schema_native(task_id, data)` | Hard-validates JSONB submission against task schema |
+| `check_submission_cooldown_native(task_id, user_id)` | Enforces per-task submission cooldown |
+| `kick_participant_native(...)` | HOST removes participant; logs to kick_log |
+| `update_contest_visibility(...)` | HOST/MOD updates visibility flags |
+| `get_contest_visibility(contest_id)` | Returns visibility config |
+| `get_contest_enrollment_info(contest_id)` | Returns capacity, count, spots, kicked count |
+| `post_announcement_native(...)` | HOST/MOD posts an announcement |
+| `delete_announcement_native(...)` | HOST/MOD deletes an announcement |
+| `get_contest_profile(contest_id, viewer_id)` | Full profile aggregator (single DB query) |
+| `get_user_profile_stats(user_id)` | User statistics aggregator |
+| `get_user_activity_graph(user_id)` | Submission count by date |
+| `get_user_contest_history(user_id)` | Contest participation history with rank |
+| `get_user_submission_history(user_id, limit)` | Recent submission log |
+| `get_contest_statistics(contest_id, as_admin)` | Contest-wide analytics with task stats |
+| `get_contest_submission_timeline(contest_id, as_admin)` | date_bin bucketed timeline |
+| `get_participant_score_progression(contest_id, user_id)` | Cumulative score timeline |

@@ -48,11 +48,12 @@ When a contest is created, it goes into the main `contests` table with the statu
    SELECT id, title, ranking_strategy, judging_description FROM contests WHERE status = 'PENDING_APPROVAL';
    ```
 2. **Code Implementation**: The developer reviews the requested `judging_description` and `ranking_strategy` (e.g. they might need to write a new stored function in `database/procedures.sql` to support a new score calculation formula, or extend the worker python code).
-3. **Approve / Release**: Once the developer implements and deploys the necessary features for the contest, they run the approval command (or invoke the frontend "Approve" button, which calls `POST /contests/{contest_id}/approve` and runs `approve_contest_native` natively):
+3. **Approve / Release**: Once the developer implements and deploys the necessary features for the contest, they connect to the database directly in a terminal and run:
    ```sql
    SELECT approve_contest_native(contest_id);
    ```
    This shifts the status to `'ACTIVE'`, making the contest live and open for enrollment.
+   > **Note:** Contest approval is intentionally not exposed as an API endpoint or GUI button. It is a developer-only terminal action by design.
 
 ### Coherent Logic: Blocking Submissions for Draft Contests
 To ensure a contest cannot accept submissions before the developer approves the logic and database support is complete:
@@ -92,3 +93,133 @@ SELECT setval('tasks_id_seq', COALESCE((SELECT MAX(id) FROM tasks), 1));
 SELECT setval('submissions_id_seq', COALESCE((SELECT MAX(id) FROM submissions), 1));
 ```
 Running the setup script [database/setup_db.py](database/setup_db.py) now completely resolves this issue, ensuring future inserts generate the correct unique IDs.
+
+---
+
+## 4. Enrollment Capacity & Late Enrollment
+
+### `max_participants` — Enrollment Cap
+The `contests` table has a nullable `max_participants INT` column. When set to `NULL` (the default), enrollment is unlimited. When set to a positive integer, the contest has a hard cap on participant count.
+
+The capacity check is enforced inside `enroll_in_contest()` using a `SELECT ... FOR UPDATE` lock on the `contests` row. This prevents race conditions where two users simultaneously enroll when only one spot remains — the lock serializes the two transactions so only one succeeds.
+
+The check compares `COUNT(*) FROM enrollments WHERE role = 'PARTICIPANT'` against `max_participants` and raises an exception if full.
+
+### `allow_late_enrollment` — Time-Based Enrollment Gate
+When set to `FALSE`, enrollment is rejected if `NOW() > start_time`. This is enforced inside `enroll_in_contest()` after the cap check. When `TRUE` (default), participants can join at any time while the contest is ACTIVE.
+
+---
+
+## 5. Task Submission Schemas
+
+### Why Submission Schemas?
+Every task in ContestDB has a `submission_schema JSONB NOT NULL` column. This is mandatory — a task cannot be created without a schema. The schema declares what shape a valid `submission_data` payload must have.
+
+This keeps the submission contract explicit and enforced entirely inside PostgreSQL via `validate_submission_schema_native()`.
+
+### Schema Format
+```json
+{
+  "required_keys": ["key1", "key2"],
+  "numeric_keys": ["key1"]
+}
+```
+- `required_keys`: All listed keys must exist in `submission_data`.
+- `numeric_keys`: All listed keys must have JSON number type (`jsonb_typeof(...) = 'number'`).
+
+### Validation Flow
+1. Participant submits via `POST /submissions`.
+2. API calls `SELECT validate_submission_schema_native(task_id, submission_data::jsonb)`.
+3. DB function fetches the task's schema, iterates over `required_keys` and `numeric_keys`.
+4. If any key is missing or wrong type, `RAISE EXCEPTION` is thrown → API returns HTTP 400 with the DB error message.
+5. If all checks pass, submission is inserted into the queue as `PENDING`.
+
+### Example: Speed Run Task
+```json
+{"required_keys": ["run_time_seconds", "restarts"], "numeric_keys": ["run_time_seconds", "restarts"]}
+```
+
+### Example: Math Quiz Task
+```json
+{"required_keys": ["score", "verdict"], "numeric_keys": ["score"]}
+```
+
+---
+
+## 6. Submission Cooldowns (Per-Task)
+
+The `tasks.submission_cooldown_seconds INT` column (default `0`) sets a per-task minimum wait time between submissions from the same user.
+
+- `0` = no cooldown enforced (the DB function returns immediately — zero overhead).
+- `> 0` = cooldown active. The function queries `MAX(submitted_at)` from `submissions WHERE task_id AND user_id`, computes elapsed seconds, and raises an exception with seconds remaining if the cooldown has not expired.
+
+This is enforced inside PostgreSQL via `check_submission_cooldown_native(task_id, user_id)`, called by the API before schema validation. If triggered, the API returns HTTP 429.
+
+---
+
+## 7. Participant Kick & Ban System
+
+### How Kicking Works
+A contest HOST can remove any PARTICIPANT or MODERATOR from a contest via `DELETE /contests/{id}/members/{uid}`. This calls `kick_participant_native()` which:
+1. Verifies the requester is HOST.
+2. Verifies the target is not another HOST or the requester themselves.
+3. Inserts a row into `kick_log` with timestamp and optional reason.
+4. Deletes the enrollment row.
+
+### Permanent Ban
+The `kick_log` table acts as a ban list. `enroll_in_contest()` checks `kick_log` before allowing re-enrollment — kicked users receive an exception if they try to join again.
+
+### Submission Preservation
+A kicked participant's submissions are **not deleted**. They remain in the `submissions` table for historical accuracy and leaderboard record integrity. Only the enrollment row is removed.
+
+### Kick Log
+The full audit trail is available to HOST/MODERATOR via `GET /contests/{id}/kick-log`. Each record shows who was kicked, by whom, when, and the reason.
+
+---
+
+## 8. Contest Profile & Visibility System
+
+### `contest_visibility` Table
+Every contest has exactly one row in `contest_visibility`, auto-created with defaults when `create_contest_native()` is called. The table controls which fields public viewers can see on the contest page.
+
+| Flag | Default | Description |
+|---|---|---|
+| `show_participant_count` | `TRUE` | Whether enrollment numbers are visible |
+| `show_leaderboard` | `TRUE` | Whether the leaderboard is public |
+| `show_member_list` | `FALSE` | Whether the participant list is public |
+| `show_task_list` | `TRUE` | Whether tasks are visible before contest ends |
+| `show_statistics` | `FALSE` | Whether contest analytics are public |
+| `show_submission_count` | `FALSE` | Whether total submission count is shown |
+
+### Updating Visibility
+HOST or MODERATOR can change any flag via `PUT /contests/{id}/visibility`. The update is an upsert (`ON CONFLICT DO UPDATE`) into `contest_visibility`. All logic is in `update_contest_visibility()` (PL/pgSQL).
+
+### How the API Applies Visibility
+- `GET /contests/{id}` and `GET /contests` return a `visibility` object with all flags.
+- `GET /contests/{id}/profile` (the full profile aggregator) conditionally includes fields like `current_participants` only if `show_participant_count = TRUE` OR the viewer is HOST/MODERATOR.
+- Viewers with HOST or MODERATOR role always see everything regardless of visibility flags.
+
+---
+
+## 9. Contest Announcements
+
+HOSTs and MODERATORs can post broadcast messages to a contest via `POST /contests/{id}/announcements`. Announcements are stored in `contest_announcements` and are visible to all viewers via `GET /contests/{id}/announcements` (public endpoint, no auth required).
+
+Deletion is available to HOST/MOD via `DELETE /announcements/{id}`.
+
+Announcement count and the title of the latest announcement are included in the contest profile aggregator (`GET /contests/{id}/profile`).
+
+---
+
+## 10. Contest Profile Aggregator
+
+The `GET /contests/{id}/profile` endpoint calls `get_contest_profile(contest_id, viewer_user_id)` — a single PL/pgSQL function that joins:
+- `contests` metadata
+- `enrollments` for participant count
+- `kick_log` for ban count
+- `tasks` for task count
+- `contest_announcements` for announcement count and latest title preview
+- `contest_visibility` for visibility flags
+- `enrollments` again for the viewer's role
+
+All in one SQL query using CTEs and LEFT JOINs. The API layer then applies visibility gating to decide which fields to expose.

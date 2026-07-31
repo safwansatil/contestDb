@@ -59,8 +59,12 @@ FastAPI serves the premium contest dashboard at the root URL.
      * Judging Logic: `Speed run of line follower. Deduct 2 points per restart from base 100.`
    * Click **Create & Submit for Approval**.
    * Note in the contest list, the new contest appears with a yellow `PENDING_APPROVAL` badge.
-   * Click on the new contest. Note that a purple button **"Approve Contest (Dev Action)"** appears.
-   * Click **Approve Contest (Dev Action)**. The status immediately updates to `ACTIVE` (green badge).
+   * The contest card shows an info notice: **"Awaiting Developer Approval"** — no button is shown.
+   * To activate the contest, a developer must connect to the database directly in a terminal and run:
+     ```sql
+     SELECT approve_contest_native(<contest_id>);
+     ```
+   * After running the SQL, refresh the page. The status updates to `ACTIVE` (green badge).
 5. **Test Task Management**:
    * Since Sayma is the creator, she is enrolled as the `HOST` of `LFR Speed Run 2026`.
    * The **"Add Task to Contest"** form is now visible.
@@ -103,12 +107,20 @@ curl -X POST http://127.0.0.1:8000/contests \
 ```
 *Expected Response:* Returns `contest_id` and a pending approval message.
 
-#### 2. Approve Contest (Developer/Admin Action)
-```bash
-curl -X POST http://127.0.0.1:8000/contests/<contest_id>/approve \
-     -H "Authorization: Bearer <your_access_token>"
+#### 2. Approve Contest (Developer/Admin Terminal Action)
+
+> **This is intentionally NOT an API endpoint.** Approval must be done directly in the database.
+> The `/contests/{id}/approve` HTTP route has been removed by design.
+
+Connect to your PostgreSQL instance (e.g. via `psql` or the Neon console) and run:
+```sql
+-- Option A: via stored function
+SELECT approve_contest_native(<contest_id>);
+
+-- Option B: direct update
+UPDATE contests SET status = 'ACTIVE' WHERE id = <contest_id>;
 ```
-*Expected Response:* Returns message indicating the contest is active.
+*Expected:* The contest row's `status` changes to `ACTIVE`. The next `GET /contests` call will reflect the change.
 
 #### 3. Add Task to Contest
 ```bash
@@ -118,7 +130,13 @@ curl -X POST http://127.0.0.1:8000/contests/<contest_id>/tasks \
      -d '{
        "title": "Speed Test",
        "description": "Drive as fast as possible on the track",
-       "max_score": 100
+       "max_score": 100,
+       "submission_schema": {
+         "required_keys": ["run_time_seconds", "restarts"],
+         "numeric_keys": ["run_time_seconds", "restarts"]
+       },
+       "submission_cooldown_seconds": 0,
+       "task_order": 1
      }'
 ```
 *Expected Response:* Returns `task_id` and success message.
@@ -182,4 +200,133 @@ curl -X GET http://127.0.0.1:8000/contests/1/progress/3 \
 ```
 *Expected Response:* Returns a chronological list of cumulative score growth after each submission during the contest.
 
+---
 
+## 5. v0.5.0 Feature Verification (New Features)
+
+> **Before testing**: Run `python database/setup_db.py` to apply all schema changes and re-seed the database.
+
+### A. Enrollment Capacity Check
+Contest 1 has `max_participants = 5` and currently has sayma + nondiny + satil (3 participants). Try enrolling tabib (not yet in Contest 1):
+```bash
+# Login as tabib first
+curl -X POST http://127.0.0.1:8000/auth/login -H "Content-Type: application/json" -d '{"username": "tabib", "password": "password123"}'
+# Then enroll in Contest 1
+curl -X POST http://127.0.0.1:8000/contests/1/enroll \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <tabib_token>" \
+     -d '{}'
+```
+*Expected:* Enrollment succeeds (2 spots remain). Then add 2 more users and try again — expect HTTP 400 with `This contest is full`.
+
+### B. Enrollment Info
+```bash
+curl http://127.0.0.1:8000/contests/1/enrollment-info
+```
+*Expected:* `{"max_participants": 5, "current_participants": 3, "spots_remaining": 2, "allow_late_enrollment": true, "total_kicked": 0}`
+
+### C. Submission Schema Validation — Missing Key
+Login as satil (enrolled in Contest 1), submit to Task 1 with a wrong payload:
+```bash
+curl -X POST http://127.0.0.1:8000/submissions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <satil_token>" \
+     -d '{"contest_id": 1, "task_id": 1, "submission_data": {"wrong_key": 99}}'
+```
+*Expected:* HTTP 400 — `Submission schema validation failed: missing required key "run_time_seconds"`
+
+### D. Submission Schema Validation — Wrong Type
+```bash
+curl -X POST http://127.0.0.1:8000/submissions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <satil_token>" \
+     -d '{"contest_id": 1, "task_id": 1, "submission_data": {"run_time_seconds": "fast", "restarts": 0}}'
+```
+*Expected:* HTTP 400 — `Submission schema validation failed: key "run_time_seconds" must be a number`
+
+### E. Submission Cooldown
+Task 1 has `submission_cooldown_seconds = 30`. Submit twice within 30 seconds:
+```bash
+# First submit (succeeds)
+curl -X POST http://127.0.0.1:8000/submissions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <satil_token>" \
+     -d '{"contest_id": 1, "task_id": 1, "submission_data": {"run_time_seconds": 10.0, "restarts": 0}}'
+# Second submit immediately (should be blocked)
+curl -X POST http://127.0.0.1:8000/submissions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <satil_token>" \
+     -d '{"contest_id": 1, "task_id": 1, "submission_data": {"run_time_seconds": 9.0, "restarts": 0}}'
+```
+*Expected:* Second call returns HTTP 429 — `Submission cooldown active: please wait N more second(s)`
+
+### F. Kick Participant
+Login as sayma (HOST of Contest 1), kick satil:
+```bash
+curl -X DELETE http://127.0.0.1:8000/contests/1/members/3 \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <sayma_token>" \
+     -d '{"reason": "Violated contest rules"}'
+```
+*Expected:* `{"message": "Participant (ID 3) successfully removed from contest"}`
+
+Now try re-enrolling as satil:
+```bash
+curl -X POST http://127.0.0.1:8000/contests/1/enroll \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <satil_token>" \
+     -d '{}'
+```
+*Expected:* HTTP 400 — `You have been removed from this contest and cannot re-enroll`
+
+### G. Kick Log
+```bash
+curl http://127.0.0.1:8000/contests/1/kick-log \
+     -H "Authorization: Bearer <sayma_token>"
+```
+*Expected:* List containing satil's kick record with reason, kicked_by, and kicked_at.
+
+### H. Contest Visibility
+Fetch current visibility:
+```bash
+curl http://127.0.0.1:8000/contests/1/visibility
+```
+*Expected:* Returns all 6 boolean flags.
+
+Update visibility (hide leaderboard from public):
+```bash
+curl -X PUT http://127.0.0.1:8000/contests/1/visibility \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <sayma_token>" \
+     -d '{"show_participant_count": true, "show_leaderboard": false, "show_member_list": false, "show_task_list": true, "show_statistics": false, "show_submission_count": false}'
+```
+*Expected:* `{"message": "Contest visibility settings updated successfully"}`
+
+### I. Announcements
+Post an announcement as sayma:
+```bash
+curl -X POST http://127.0.0.1:8000/contests/1/announcements \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <sayma_token>" \
+     -d '{"title": "Important Update", "body": "Please check the revised scoring rules."}'
+```
+*Expected:* Returns `announcement_id`.
+
+Fetch all announcements (public):
+```bash
+curl http://127.0.0.1:8000/contests/1/announcements
+```
+*Expected:* List of announcements (including 2 seeded ones + the one just posted).
+
+### J. Contest Profile Aggregator
+```bash
+curl http://127.0.0.1:8000/contests/1/profile
+```
+*Expected:* Full profile including title, status, task_count (1), announcement_count (2+), capacity info (if show_participant_count=TRUE), viewer_role (null if unauthenticated), and visibility flags.
+
+Repeat with sayma's token:
+```bash
+curl http://127.0.0.1:8000/contests/1/profile \
+     -H "Authorization: Bearer <sayma_token>"
+```
+*Expected:* Same but also includes `invitation_code`, `total_kicked`, and `spots_remaining` since sayma is HOST.
