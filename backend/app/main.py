@@ -99,11 +99,16 @@ class ContestCreateRequest(BaseModel):
     end_time: datetime
     invitation_code: Optional[str] = Field(None, max_length=50)
     judging_description: str = Field(..., min_length=5)
+    max_participants: Optional[int] = Field(None, ge=1, description="Max participant cap. NULL = unlimited.")
+    allow_late_enrollment: bool = Field(True, description="If False, enrollment is blocked after start_time.")
 
 class TaskCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1)
     max_score: float = Field(100.0, ge=0.0)
+    submission_schema: Dict[str, Any] = Field(..., description="Required JSONB schema descriptor for submission_data validation (required_keys, numeric_keys).")
+    submission_cooldown_seconds: int = Field(0, ge=0, description="Cooldown seconds between submissions per user. 0 = no cooldown.")
+    task_order: int = Field(0, ge=0, description="Display order index within the contest. Lower = shown first.")
 
 class EnrollRequest(BaseModel):
     invitation_code: Optional[str] = None
@@ -118,6 +123,21 @@ class RoleUpdateRequest(BaseModel):
         if v not in ("HOST", "MODERATOR", "PARTICIPANT"):
             raise ValueError("Role must be HOST, MODERATOR, or PARTICIPANT")
         return v
+
+class ContestVisibilityRequest(BaseModel):
+    show_participant_count: bool = True
+    show_leaderboard: bool = True
+    show_member_list: bool = False
+    show_task_list: bool = True
+    show_statistics: bool = False
+    show_submission_count: bool = False
+
+class AnnouncementCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=150)
+    body: str = Field(..., min_length=1)
+
+class KickParticipantRequest(BaseModel):
+    reason: Optional[str] = None
 
 # Lifecycle Event Handlers
 @app.on_event("startup")
@@ -229,10 +249,14 @@ async def get_contests(current_user: Optional[Dict[str, Any]] = Depends(get_opti
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                SELECT c.id, c.title, c.ranking_strategy, c.start_time, c.freeze_time, c.end_time, 
-                       c.status, c.judging_description, c.invitation_code, e.role
+                SELECT c.id, c.title, c.ranking_strategy, c.start_time, c.freeze_time, c.end_time,
+                       c.status, c.judging_description, c.invitation_code, e.role,
+                       c.max_participants, c.allow_late_enrollment,
+                       cv.show_participant_count, cv.show_leaderboard, cv.show_member_list,
+                       cv.show_task_list, cv.show_statistics, cv.show_submission_count
                 FROM contests c
                 LEFT JOIN enrollments e ON c.id = e.contest_id AND e.user_id = %s
+                LEFT JOIN contest_visibility cv ON c.id = cv.contest_id
                 ORDER BY c.id DESC;
                 """,
                 (user_id,)
@@ -240,10 +264,10 @@ async def get_contests(current_user: Optional[Dict[str, Any]] = Depends(get_opti
             rows = await cur.fetchall()
             contests = []
             for row in rows:
-                c_id, title, ranking, start, freeze, end, status, judging_desc, inv_code, role = row
+                (c_id, title, ranking, start, freeze, end, status, judging_desc, inv_code, role,
+                 max_p, allow_late, show_pc, show_lb, show_ml, show_tl, show_st, show_sc) = row
                 has_code = inv_code is not None and inv_code != ""
-                show_code = role in ("HOST", "MODERATOR")
-                
+                is_admin = role in ("HOST", "MODERATOR")
                 contests.append({
                     "id": c_id,
                     "title": title,
@@ -254,8 +278,18 @@ async def get_contests(current_user: Optional[Dict[str, Any]] = Depends(get_opti
                     "status": status,
                     "judging_description": judging_desc,
                     "requires_invitation_code": has_code,
-                    "invitation_code": inv_code if show_code else None,
-                    "user_role": role
+                    "invitation_code": inv_code if is_admin else None,
+                    "user_role": role,
+                    "max_participants": max_p,
+                    "allow_late_enrollment": allow_late,
+                    "visibility": {
+                        "show_participant_count": show_pc if show_pc is not None else True,
+                        "show_leaderboard": show_lb if show_lb is not None else True,
+                        "show_member_list": show_ml if show_ml is not None else False,
+                        "show_task_list": show_tl if show_tl is not None else True,
+                        "show_statistics": show_st if show_st is not None else False,
+                        "show_submission_count": show_sc if show_sc is not None else False,
+                    }
                 })
             return contests
 
@@ -269,10 +303,14 @@ async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = 
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                SELECT c.id, c.title, c.ranking_strategy, c.start_time, c.freeze_time, c.end_time, 
-                       c.status, c.judging_description, c.invitation_code, e.role
+                SELECT c.id, c.title, c.ranking_strategy, c.start_time, c.freeze_time, c.end_time,
+                       c.status, c.judging_description, c.invitation_code, e.role,
+                       c.max_participants, c.allow_late_enrollment,
+                       cv.show_participant_count, cv.show_leaderboard, cv.show_member_list,
+                       cv.show_task_list, cv.show_statistics, cv.show_submission_count
                 FROM contests c
                 LEFT JOIN enrollments e ON c.id = e.contest_id AND e.user_id = %s
+                LEFT JOIN contest_visibility cv ON c.id = cv.contest_id
                 WHERE c.id = %s;
                 """,
                 (user_id, contest_id)
@@ -280,11 +318,12 @@ async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = 
             row = await cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Contest not found")
-            
-            c_id, title, ranking, start, freeze, end, status, judging_desc, inv_code, role = row
+
+            (c_id, title, ranking, start, freeze, end, status, judging_desc, inv_code, role,
+             max_p, allow_late, show_pc, show_lb, show_ml, show_tl, show_st, show_sc) = row
             has_code = inv_code is not None and inv_code != ""
-            show_code = role in ("HOST", "MODERATOR")
-            
+            is_admin = role in ("HOST", "MODERATOR")
+
             return {
                 "id": c_id,
                 "title": title,
@@ -295,8 +334,18 @@ async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = 
                 "status": status,
                 "judging_description": judging_desc,
                 "requires_invitation_code": has_code,
-                "invitation_code": inv_code if show_code else None,
-                "user_role": role
+                "invitation_code": inv_code if is_admin else None,
+                "user_role": role,
+                "max_participants": max_p,
+                "allow_late_enrollment": allow_late,
+                "visibility": {
+                    "show_participant_count": show_pc if show_pc is not None else True,
+                    "show_leaderboard": show_lb if show_lb is not None else True,
+                    "show_member_list": show_ml if show_ml is not None else False,
+                    "show_task_list": show_tl if show_tl is not None else True,
+                    "show_statistics": show_st if show_st is not None else False,
+                    "show_submission_count": show_sc if show_sc is not None else False,
+                }
             }
 
 @app.post("/contests", status_code=status.HTTP_201_CREATED)
@@ -309,7 +358,7 @@ async def create_contest(payload: ContestCreateRequest, current_user: Dict[str, 
         async with conn.cursor() as cur:
             try:
                 await cur.execute(
-                    "SELECT create_contest_native(%s, %s, %s, %s, %s, %s, %s, %s);",
+                    "SELECT create_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                     (
                         payload.title,
                         payload.ranking_strategy,
@@ -318,7 +367,9 @@ async def create_contest(payload: ContestCreateRequest, current_user: Dict[str, 
                         payload.end_time,
                         payload.invitation_code,
                         payload.judging_description,
-                        creator_id
+                        creator_id,
+                        payload.max_participants,
+                        payload.allow_late_enrollment
                     )
                 )
                 row = await cur.fetchone()
@@ -355,7 +406,7 @@ async def update_contest(contest_id: int, payload: ContestCreateRequest, current
         async with conn.cursor() as cur:
             try:
                 await cur.execute(
-                    "SELECT update_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                    "SELECT update_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                     (
                         contest_id,
                         user_id,
@@ -365,7 +416,9 @@ async def update_contest(contest_id: int, payload: ContestCreateRequest, current
                         payload.freeze_time,
                         payload.end_time,
                         payload.invitation_code,
-                        payload.judging_description
+                        payload.judging_description,
+                        payload.max_participants,
+                        payload.allow_late_enrollment
                     )
                 )
                 await conn.commit()
@@ -402,10 +455,11 @@ async def get_contest_tasks(contest_id: int, current_user: Optional[Dict[str, An
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                SELECT id, title, description, max_score
+                SELECT id, title, description, max_score,
+                       submission_schema, submission_cooldown_seconds, task_order
                 FROM tasks
                 WHERE contest_id = %s
-                ORDER BY id ASC;
+                ORDER BY task_order ASC, id ASC;
                 """,
                 (contest_id,)
             )
@@ -416,7 +470,10 @@ async def get_contest_tasks(contest_id: int, current_user: Optional[Dict[str, An
                     "id": row[0],
                     "title": row[1],
                     "description": row[2],
-                    "max_score": float(row[3])
+                    "max_score": float(row[3]),
+                    "submission_schema": row[4],
+                    "submission_cooldown_seconds": row[5],
+                    "task_order": row[6]
                 })
             return tasks
 
@@ -429,9 +486,15 @@ async def create_task(contest_id: int, payload: TaskCreateRequest, current_user:
     async with get_db_connection() as conn:
         async with conn.cursor() as cur:
             try:
+                import json as _json
                 await cur.execute(
-                    "SELECT add_task_native(%s, %s, %s, %s, %s);",
-                    (contest_id, user_id, payload.title, payload.description, payload.max_score)
+                    "SELECT add_task_native(%s, %s, %s, %s, %s, %s::jsonb, %s, %s);",
+                    (
+                        contest_id, user_id, payload.title, payload.description, payload.max_score,
+                        _json.dumps(payload.submission_schema),
+                        payload.submission_cooldown_seconds,
+                        payload.task_order
+                    )
                 )
                 row = await cur.fetchone()
                 await conn.commit()
@@ -450,9 +513,15 @@ async def update_task(task_id: int, payload: TaskCreateRequest, current_user: Di
     async with get_db_connection() as conn:
         async with conn.cursor() as cur:
             try:
+                import json as _json
                 await cur.execute(
-                    "SELECT update_task_native(%s, %s, %s, %s, %s);",
-                    (task_id, user_id, payload.title, payload.description, payload.max_score)
+                    "SELECT update_task_native(%s, %s, %s, %s, %s, %s::jsonb, %s, %s);",
+                    (
+                        task_id, user_id, payload.title, payload.description, payload.max_score,
+                        _json.dumps(payload.submission_schema),
+                        payload.submission_cooldown_seconds,
+                        payload.task_order
+                    )
                 )
                 await conn.commit()
                 return {"message": "Task successfully updated"}
@@ -608,6 +677,33 @@ async def create_submission(
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Task {payload.task_id} does not belong to contest {payload.contest_id}"
+                    )
+
+            # 1c. DB-native submission cooldown check (no-op if cooldown_seconds = 0)
+            if payload.task_id:
+                try:
+                    await cur.execute(
+                        "SELECT check_submission_cooldown_native(%s, %s);",
+                        (payload.task_id, user_id)
+                    )
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail=str(e)
+                    )
+
+            # 1d. DB-native submission schema validation (hard-reject on mismatch)
+            if payload.task_id:
+                try:
+                    import json as _json
+                    await cur.execute(
+                        "SELECT validate_submission_schema_native(%s, %s::jsonb);",
+                        (payload.task_id, _json.dumps(payload.submission_data))
+                    )
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=str(e)
                     )
 
             # 2. Ingest the submission into the PostgreSQL queue
@@ -869,3 +965,367 @@ async def get_participant_progress(
                 "user_id": user_id,
                 "progress": progress
             }
+
+# ============================================================
+# Contest Visibility Endpoints
+# ============================================================
+
+@app.get("/contests/{contest_id}/visibility")
+async def get_contest_visibility(
+    contest_id: int,
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+):
+    """
+    Fetch the visibility configuration for a contest.
+    Visibility settings control which fields public viewers can see.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    """
+                    SELECT show_participant_count, show_leaderboard, show_member_list,
+                           show_task_list, show_statistics, show_submission_count, updated_at
+                    FROM get_contest_visibility(%s);
+                    """,
+                    (contest_id,)
+                )
+                row = await cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Contest not found")
+                return {
+                    "contest_id": contest_id,
+                    "show_participant_count": row[0],
+                    "show_leaderboard": row[1],
+                    "show_member_list": row[2],
+                    "show_task_list": row[3],
+                    "show_statistics": row[4],
+                    "show_submission_count": row[5],
+                    "updated_at": row[6]
+                }
+            except Exception as e:
+                logger.error(f"Error fetching visibility: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/contests/{contest_id}/visibility")
+async def update_contest_visibility(
+    contest_id: int,
+    payload: ContestVisibilityRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Update contest visibility settings. Only HOST or MODERATOR can call this.
+    Controls which fields are exposed to public viewers on the contest profile page.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT update_contest_visibility(%s, %s, %s, %s, %s, %s, %s, %s);",
+                    (
+                        contest_id, user_id,
+                        payload.show_participant_count,
+                        payload.show_leaderboard,
+                        payload.show_member_list,
+                        payload.show_task_list,
+                        payload.show_statistics,
+                        payload.show_submission_count
+                    )
+                )
+                await conn.commit()
+                return {"message": "Contest visibility settings updated successfully"}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error updating visibility: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+# ============================================================
+# Enrollment Info Endpoint
+# ============================================================
+
+@app.get("/contests/{contest_id}/enrollment-info")
+async def get_enrollment_info(
+    contest_id: int,
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+):
+    """
+    Fetch enrollment capacity info for a contest:
+    max participants, current count, remaining spots, late-enrollment flag, and kick count.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    """
+                    SELECT max_participants, current_participants, spots_remaining,
+                           allow_late_enrollment, total_kicked
+                    FROM get_contest_enrollment_info(%s);
+                    """,
+                    (contest_id,)
+                )
+                row = await cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Contest not found")
+                return {
+                    "contest_id": contest_id,
+                    "max_participants": row[0],
+                    "current_participants": row[1],
+                    "spots_remaining": row[2],
+                    "allow_late_enrollment": row[3],
+                    "total_kicked": row[4]
+                }
+            except Exception as e:
+                logger.error(f"Error fetching enrollment info: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+# ============================================================
+# Participant Kick & Kick Log Endpoints
+# ============================================================
+
+@app.delete("/contests/{contest_id}/members/{target_user_id}")
+async def kick_participant(
+    contest_id: int,
+    target_user_id: int,
+    payload: KickParticipantRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Remove (kick) a participant from a contest. HOST only.
+    The participant is permanently banned from re-enrolling in the same contest.
+    Their submission history is preserved for record integrity.
+    The kick is logged in kick_log with an optional reason.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT kick_participant_native(%s, %s, %s, %s);",
+                    (contest_id, user_id, target_user_id, payload.reason)
+                )
+                await conn.commit()
+                return {"message": f"Participant (ID {target_user_id}) successfully removed from contest"}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error kicking participant: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/contests/{contest_id}/kick-log")
+async def get_kick_log(
+    contest_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Fetch the full kick/ban audit log for a contest. HOST or MODERATOR only.
+    Returns all removed participants with kick reason and timestamp.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT role FROM enrollments WHERE contest_id = %s AND user_id = %s",
+                (contest_id, user_id)
+            )
+            role_row = await cur.fetchone()
+            if not role_row or role_row[0] not in ("HOST", "MODERATOR"):
+                raise HTTPException(status_code=403, detail="Unauthorized: Only Host or Moderator can view the kick log")
+
+            await cur.execute(
+                """
+                SELECT kl.id, u_kicked.id, u_kicked.username, u_by.username,
+                       kl.reason, kl.kicked_at
+                FROM kick_log kl
+                JOIN users u_kicked ON kl.kicked_user_id = u_kicked.id
+                JOIN users u_by ON kl.kicked_by = u_by.id
+                WHERE kl.contest_id = %s
+                ORDER BY kl.kicked_at DESC;
+                """,
+                (contest_id,)
+            )
+            rows = await cur.fetchall()
+            return [
+                {
+                    "log_id": r[0],
+                    "kicked_user_id": r[1],
+                    "kicked_username": r[2],
+                    "kicked_by_username": r[3],
+                    "reason": r[4],
+                    "kicked_at": r[5]
+                }
+                for r in rows
+            ]
+
+# ============================================================
+# Contest Announcements Endpoints
+# ============================================================
+
+@app.post("/contests/{contest_id}/announcements", status_code=status.HTTP_201_CREATED)
+async def post_announcement(
+    contest_id: int,
+    payload: AnnouncementCreateRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Post a new announcement to a contest. HOST or MODERATOR only.
+    Announcements are visible to all viewers of the contest page.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT post_announcement_native(%s, %s, %s, %s);",
+                    (contest_id, user_id, payload.title, payload.body)
+                )
+                row = await cur.fetchone()
+                await conn.commit()
+                return {"message": "Announcement posted", "announcement_id": row[0]}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error posting announcement: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/contests/{contest_id}/announcements")
+async def get_announcements(
+    contest_id: int,
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+):
+    """
+    Fetch all announcements for a contest, ordered newest first.
+    Public endpoint — any viewer can read announcements.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT ca.id, ca.title, ca.body, u.username, ca.posted_at
+                FROM contest_announcements ca
+                JOIN users u ON ca.author_id = u.id
+                WHERE ca.contest_id = %s
+                ORDER BY ca.posted_at DESC;
+                """,
+                (contest_id,)
+            )
+            rows = await cur.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "title": r[1],
+                    "body": r[2],
+                    "author": r[3],
+                    "posted_at": r[4]
+                }
+                for r in rows
+            ]
+
+@app.delete("/announcements/{announcement_id}")
+async def delete_announcement(
+    announcement_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Delete an announcement. HOST or MODERATOR of the associated contest only.
+    """
+    user_id = current_user["user_id"]
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT delete_announcement_native(%s, %s);",
+                    (announcement_id, user_id)
+                )
+                await conn.commit()
+                return {"message": "Announcement deleted"}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error deleting announcement: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
+# ============================================================
+# Contest Profile Aggregator Endpoint
+# ============================================================
+
+@app.get("/contests/{contest_id}/profile")
+async def get_contest_profile(
+    contest_id: int,
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+):
+    """
+    Fetch a full aggregated contest profile in a single database call.
+    Returns contest metadata, enrollment capacity info, visibility config,
+    announcement summary, task count, and the viewer's enrollment status.
+    Fields like invitation_code are redacted based on viewer role and visibility settings.
+    """
+    viewer_id = current_user["user_id"] if current_user else None
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    """
+                    SELECT contest_id, title, ranking_strategy, start_time, freeze_time, end_time,
+                           status, judging_description, invitation_code, max_participants,
+                           allow_late_enrollment, current_participants, spots_remaining,
+                           total_kicked, task_count, announcement_count, latest_announcement_title,
+                           show_participant_count, show_leaderboard, show_member_list,
+                           show_task_list, show_statistics, show_submission_count,
+                           viewer_role, viewer_is_enrolled
+                    FROM get_contest_profile(%s, %s);
+                    """,
+                    (contest_id, viewer_id)
+                )
+                row = await cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Contest not found")
+
+                (
+                    c_id, title, ranking, start, freeze, end,
+                    c_status, judging_desc, inv_code, max_p,
+                    allow_late, current_p, spots, total_kicked,
+                    task_count, ann_count, latest_ann_title,
+                    show_pc, show_lb, show_ml, show_tl, show_st, show_sc,
+                    viewer_role, viewer_enrolled
+                ) = row
+
+                is_admin = viewer_role in ("HOST", "MODERATOR")
+
+                profile = {
+                    "contest_id": c_id,
+                    "title": title,
+                    "ranking_strategy": ranking,
+                    "start_time": start,
+                    "freeze_time": freeze,
+                    "end_time": end,
+                    "status": c_status,
+                    "judging_description": judging_desc,
+                    "invitation_code": inv_code if is_admin else None,
+                    "max_participants": max_p,
+                    "allow_late_enrollment": allow_late,
+                    "task_count": task_count,
+                    "announcement_count": ann_count,
+                    "latest_announcement_title": latest_ann_title,
+                    "viewer_role": viewer_role,
+                    "viewer_is_enrolled": viewer_enrolled,
+                    "visibility": {
+                        "show_participant_count": show_pc,
+                        "show_leaderboard": show_lb,
+                        "show_member_list": show_ml,
+                        "show_task_list": show_tl,
+                        "show_statistics": show_st,
+                        "show_submission_count": show_sc,
+                    }
+                }
+
+                # Conditionally include visibility-gated fields
+                if show_pc or is_admin:
+                    profile["current_participants"] = current_p
+                    profile["spots_remaining"] = spots
+
+                if is_admin:
+                    profile["total_kicked"] = total_kicked
+
+                return profile
+
+            except Exception as e:
+                logger.error(f"Error fetching contest profile: {e}")
+                raise HTTPException(status_code=400, detail=str(e))

@@ -6,6 +6,27 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.5.0] - 2026-07-31 (Contest Enhancements: Schemas, Capacity, Visibility, Kick & Announcements)
+### Added
+* **Task Submission Schemas** — Added mandatory `submission_schema JSONB NOT NULL` column to the `tasks` table in [init.sql](database/init.sql). Every task must declare a schema describing the expected shape of `submission_data`. Created new DB function `validate_submission_schema_native(task_id, submission_data)` in [procedures.sql](database/procedures.sql) that hard-rejects (RAISE EXCEPTION) submissions failing schema validation. API calls this before inserting into the queue.
+* **Per-Task Submission Cooldowns** — Added `submission_cooldown_seconds INT DEFAULT 0` to `tasks`. Created `check_submission_cooldown_native(task_id, user_id)` that enforces minimum wait time between submissions. No-op when cooldown = 0. Returns HTTP 429 on cooldown violation.
+* **Enrollment Capacity** — Added `max_participants INT` (nullable = unlimited) and `allow_late_enrollment BOOLEAN DEFAULT TRUE` to `contests` table. Extended `enroll_in_contest()` with a `FOR UPDATE` lock on the contest row to prevent concurrent enrollment race conditions, a capacity count check, a late-enrollment block, and a ban-list check.
+* **Participant Kick & Ban** — New `kick_log` table as immutable audit trail. New `kick_participant_native()` function (HOST only): inserts kick record, deletes enrollment. Kicked users cannot re-enroll (checked in `enroll_in_contest`). Submission history is preserved.
+* **Contest Visibility System** — New `contest_visibility` table with 6 configurable boolean flags per contest. Auto-created with defaults by `create_contest_native()`. Updated by `update_contest_visibility()` (HOST/MOD). Applied by API when returning contest data to public viewers.
+* **Contest Announcements** — New `contest_announcements` table. Functions `post_announcement_native()` and `delete_announcement_native()` (HOST/MOD only). Public `GET /contests/{id}/announcements` endpoint.
+* **Contest Profile Aggregator** — New `get_contest_profile(contest_id, viewer_id)` PL/pgSQL function joining 6 tables in a single query. Exposed via `GET /contests/{id}/profile`.
+* **New API Endpoints** — `GET/PUT /contests/{id}/visibility`, `GET /contests/{id}/enrollment-info`, `DELETE /contests/{id}/members/{uid}`, `GET /contests/{id}/kick-log`, `POST/GET /contests/{id}/announcements`, `DELETE /announcements/{id}`, `GET /contests/{id}/profile`.
+* **Documentation** — New file [docs/submission_schema_guide.md](docs/submission_schema_guide.md). Expanded [docs/contests.md](docs/contests.md) with sections 4–10. Updated [docs/architecture_and_erd.md](docs/architecture_and_erd.md) with new ERD and function catalogue. Updated [docs/manual_testing.md](docs/manual_testing.md) with Section 5 curl verification scenarios.
+* **Task Ordering** — Added `task_order INT DEFAULT 0` to `tasks`. Tasks are now returned ordered by `task_order ASC, id ASC`.
+
+### Changed
+* Updated `create_contest_native` and `update_contest_native` to accept `max_participants` and `allow_late_enrollment`.
+* Updated `add_task_native` and `update_task_native` to accept `submission_schema`, `submission_cooldown_seconds`, `task_order`.
+* Updated `GET /contests`, `GET /contests/{id}` to return `max_participants`, `allow_late_enrollment`, and a `visibility` object.
+* Updated `GET /contests/{id}/tasks` to return `submission_schema`, `submission_cooldown_seconds`, `task_order`, ordered by `task_order`.
+* Updated [seed.sql](database/seed.sql) with `max_participants`, `allow_late_enrollment`, `submission_schema`, `submission_cooldown_seconds`, `task_order`; added `contest_visibility` rows and sample announcements; updated TRUNCATE order and sequence syncs.
+* Updated [architecture_and_erd.md](docs/architecture_and_erd.md) ERD to version `v0.5.0` with all new tables and columns.
+
 ## [0.4.0] - 2026-07-27 (User Profiles, History, Activity Graphs & Contest Insights)
 ### Added
 * Implemented database-native stored PL/pgSQL functions for user statistics, activity graphs, contest history, and cumulative score timelines (`get_user_profile_stats`, `get_user_activity_graph`, `get_user_contest_history`, `get_user_submission_history`, `get_contest_statistics`, `get_contest_submission_timeline`, `get_participant_score_progression`).

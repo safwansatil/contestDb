@@ -1,7 +1,9 @@
 -- PL/pgSQL Stored Procedures and Views for ContestDB
 -- Database: PostgreSQL (Neon Serverless)
 
+-- ============================================================
 -- 1. Function to Claim Submissions from Queue (FOR UPDATE SKIP LOCKED)
+-- ============================================================
 CREATE OR REPLACE FUNCTION claim_submission(p_worker_id VARCHAR)
 RETURNS TABLE (
     submission_id INT,
@@ -12,7 +14,7 @@ RETURNS TABLE (
 DECLARE
     v_sub_id INT;
 BEGIN
-    -- Select the oldest pending submission, lock the row, and skip any already locked
+    -- Select the oldest pending submission, lock the row, skip any already locked
     SELECT id INTO v_sub_id
     FROM submissions
     WHERE status = 'PENDING'
@@ -20,14 +22,14 @@ BEGIN
     FOR UPDATE SKIP LOCKED
     LIMIT 1;
 
-    -- If a submission was successfully locked, update its status and return its details
+    -- If a submission was successfully locked, mark it as JUDGING and return its details
     IF v_sub_id IS NOT NULL THEN
         UPDATE submissions
-        SET status = 'JUDGING', 
+        SET status = 'JUDGING',
             judged_by = p_worker_id
         WHERE id = v_sub_id;
 
-        RETURN QUERY 
+        RETURN QUERY
         SELECT id, s.contest_id, s.user_id, s.submission_data
         FROM submissions s
         WHERE id = v_sub_id;
@@ -35,11 +37,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- ============================================================
 -- 2. Function to Get Dynamic Time-Aware Leaderboard
--- Strategies: 
---   'SUM': Score is the SUM of all submissions.
---   'MAX': Score is the MAX score of any submission.
---   With tasks, 'SUM' strategy sums the user's best scores across all tasks.
+-- Strategies:
+--   'SUM': Score is the SUM of the user's best scores across all tasks.
+--   'MAX': Score is the single MAX score achieved across all submissions.
+--   Scoreboard freeze logic applies: public viewers see standings frozen at freeze_time.
+-- ============================================================
 CREATE OR REPLACE FUNCTION get_leaderboard(p_contest_id INT, p_as_admin BOOLEAN DEFAULT FALSE)
 RETURNS TABLE (
     user_id INT,
@@ -56,7 +60,7 @@ DECLARE
     v_has_tasks BOOLEAN;
 BEGIN
     -- Fetch contest settings
-    SELECT start_time, freeze_time, end_time, ranking_strategy 
+    SELECT start_time, freeze_time, end_time, ranking_strategy
       INTO v_start_time, v_freeze_time, v_end_time, v_strategy
     FROM contests
     WHERE id = p_contest_id;
@@ -65,7 +69,7 @@ BEGIN
         RAISE EXCEPTION 'Contest with ID % not found', p_contest_id;
     END IF;
 
-    -- Determine freeze boundary:
+    -- Determine freeze boundary: admins (HOST/MOD) always see the live standings
     IF p_as_admin OR NOW() >= v_end_time THEN
         v_effective_freeze := v_end_time;
     ELSE
@@ -77,10 +81,10 @@ BEGIN
 
     IF v_has_tasks THEN
         IF v_strategy = 'MAX' THEN
-            -- With tasks, MAX strategy is the maximum score achieved across all tasks in the contest
+            -- MAX strategy with tasks: highest single score achieved across all tasks
             RETURN QUERY
             WITH user_best_scores AS (
-                SELECT 
+                SELECT
                     s.user_id,
                     MAX(s.score) AS best_score
                 FROM submissions s
@@ -90,7 +94,7 @@ BEGIN
                   AND s.submitted_at < v_effective_freeze
                 GROUP BY s.user_id
             )
-            SELECT 
+            SELECT
                 u.id AS user_id,
                 u.username,
                 COALESCE(ubs.best_score, 0)::NUMERIC AS total_score,
@@ -100,10 +104,10 @@ BEGIN
             LEFT JOIN user_best_scores ubs ON e.user_id = ubs.user_id
             WHERE e.contest_id = p_contest_id;
         ELSE
-            -- With tasks, SUM strategy is the sum of maximum score achieved on each task
+            -- SUM strategy with tasks: sum of the user's best score on each task
             RETURN QUERY
             WITH user_task_scores AS (
-                SELECT 
+                SELECT
                     s.user_id,
                     s.task_id,
                     MAX(s.score) AS best_score
@@ -115,13 +119,13 @@ BEGIN
                 GROUP BY s.user_id, s.task_id
             ),
             user_sum_scores AS (
-                SELECT 
+                SELECT
                     uts.user_id,
                     SUM(uts.best_score) AS sum_score
                 FROM user_task_scores uts
                 GROUP BY uts.user_id
             )
-            SELECT 
+            SELECT
                 u.id AS user_id,
                 u.username,
                 COALESCE(uss.sum_score, 0)::NUMERIC AS total_score,
@@ -132,11 +136,11 @@ BEGIN
             WHERE e.contest_id = p_contest_id;
         END IF;
     ELSE
-        -- Fallback to old behavior if no tasks exist
+        -- Fallback to old behavior if no tasks exist (task-less contests)
         IF v_strategy = 'MAX' THEN
             RETURN QUERY
             WITH user_best_scores AS (
-                SELECT 
+                SELECT
                     s.user_id,
                     MAX(s.score) AS best_score
                 FROM submissions s
@@ -146,7 +150,7 @@ BEGIN
                   AND s.submitted_at < v_effective_freeze
                 GROUP BY s.user_id
             )
-            SELECT 
+            SELECT
                 u.id AS user_id,
                 u.username,
                 COALESCE(ubs.best_score, 0)::NUMERIC AS total_score,
@@ -156,10 +160,10 @@ BEGIN
             LEFT JOIN user_best_scores ubs ON e.user_id = ubs.user_id
             WHERE e.contest_id = p_contest_id;
 
-        ELSE -- Default strategy: 'SUM' (Accumulative score)
+        ELSE -- Default strategy: 'SUM'
             RETURN QUERY
             WITH user_sum_scores AS (
-                SELECT 
+                SELECT
                     s.user_id,
                     SUM(s.score) AS sum_score
                 FROM submissions s
@@ -169,7 +173,7 @@ BEGIN
                   AND s.submitted_at < v_effective_freeze
                 GROUP BY s.user_id
             )
-            SELECT 
+            SELECT
                 u.id AS user_id,
                 u.username,
                 COALESCE(uss.sum_score, 0)::NUMERIC AS total_score,
@@ -183,7 +187,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 3. Function to Register a New User Natively
+-- ============================================================
+-- 3. Function to Register a New User Natively (pgcrypto bcrypt)
+-- ============================================================
 CREATE OR REPLACE FUNCTION register_user(p_username VARCHAR, p_password VARCHAR)
 RETURNS TABLE (
     user_id INT,
@@ -198,7 +204,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- ============================================================
 -- 4. Function to Verify User Credentials Natively
+-- ============================================================
 CREATE OR REPLACE FUNCTION verify_user_credentials(p_username VARCHAR, p_password VARCHAR)
 RETURNS TABLE (
     user_id INT,
@@ -208,14 +216,18 @@ BEGIN
     RETURN QUERY
     SELECT id, users.username
     FROM users
-    WHERE users.username = p_username 
+    WHERE users.username = p_username
       AND users.password_hash = crypt(p_password, users.password_hash);
 END;
 $$ LANGUAGE plpgsql;
 
--- 5. Stored Procedures for Contest CRUD, Tasks, and Roles
+-- ============================================================
+-- 5. Contest CRUD Functions
+-- ============================================================
 
--- A. Create Contest (Starts as PENDING_APPROVAL, Creator becomes HOST)
+-- A. Create Contest
+--    Contest starts as PENDING_APPROVAL. Creator is auto-enrolled as HOST.
+--    A default contest_visibility row is inserted automatically.
 CREATE OR REPLACE FUNCTION create_contest_native(
     p_title VARCHAR,
     p_ranking_strategy VARCHAR,
@@ -224,24 +236,34 @@ CREATE OR REPLACE FUNCTION create_contest_native(
     p_end_time TIMESTAMP WITH TIME ZONE,
     p_invitation_code VARCHAR,
     p_judging_description TEXT,
-    p_creator_id INT
+    p_creator_id INT,
+    p_max_participants INT DEFAULT NULL,
+    p_allow_late_enrollment BOOLEAN DEFAULT TRUE
 ) RETURNS INT AS $$
 DECLARE
     v_contest_id INT;
 BEGIN
-    INSERT INTO contests (title, ranking_strategy, start_time, freeze_time, end_time, invitation_code, judging_description, status)
-    VALUES (p_title, p_ranking_strategy, p_start_time, p_freeze_time, p_end_time, p_invitation_code, p_judging_description, 'PENDING_APPROVAL')
+    INSERT INTO contests (title, ranking_strategy, start_time, freeze_time, end_time,
+                          invitation_code, judging_description, status,
+                          max_participants, allow_late_enrollment)
+    VALUES (p_title, p_ranking_strategy, p_start_time, p_freeze_time, p_end_time,
+            p_invitation_code, p_judging_description, 'PENDING_APPROVAL',
+            p_max_participants, p_allow_late_enrollment)
     RETURNING id INTO v_contest_id;
 
     -- Creator is automatically enrolled as HOST
     INSERT INTO enrollments (contest_id, user_id, role)
     VALUES (v_contest_id, p_creator_id, 'HOST');
 
+    -- Auto-create default visibility config for this contest
+    INSERT INTO contest_visibility (contest_id)
+    VALUES (v_contest_id);
+
     RETURN v_contest_id;
 END;
 $$ LANGUAGE plpgsql;
 
--- B. Approve Contest (Developer/Admin operation to make it ACTIVE)
+-- B. Approve Contest (Developer/Admin operation)
 CREATE OR REPLACE FUNCTION approve_contest_native(p_contest_id INT)
 RETURNS VOID AS $$
 BEGIN
@@ -265,7 +287,9 @@ CREATE OR REPLACE FUNCTION update_contest_native(
     p_freeze_time TIMESTAMP WITH TIME ZONE,
     p_end_time TIMESTAMP WITH TIME ZONE,
     p_invitation_code VARCHAR,
-    p_judging_description TEXT
+    p_judging_description TEXT,
+    p_max_participants INT DEFAULT NULL,
+    p_allow_late_enrollment BOOLEAN DEFAULT TRUE
 ) RETURNS VOID AS $$
 DECLARE
     v_role VARCHAR;
@@ -285,7 +309,9 @@ BEGIN
         freeze_time = p_freeze_time,
         end_time = p_end_time,
         invitation_code = p_invitation_code,
-        judging_description = p_judging_description
+        judging_description = p_judging_description,
+        max_participants = p_max_participants,
+        allow_late_enrollment = p_allow_late_enrollment
     WHERE id = p_contest_id;
 END;
 $$ LANGUAGE plpgsql;
@@ -310,13 +336,23 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- ============================================================
+-- 6. Task CRUD Functions
+-- ============================================================
+
 -- E. Add Task (Only Hosts & Moderators)
+--    submission_schema is REQUIRED — every task must declare the expected payload structure.
+--    submission_cooldown_seconds: 0 = no cooldown enforced. > 0 = cooldown active.
+--    task_order: display ordering index within the contest.
 CREATE OR REPLACE FUNCTION add_task_native(
     p_contest_id INT,
     p_user_id INT,
     p_title VARCHAR,
     p_description TEXT,
-    p_max_score NUMERIC
+    p_max_score NUMERIC,
+    p_submission_schema JSONB,
+    p_submission_cooldown_seconds INT DEFAULT 0,
+    p_task_order INT DEFAULT 0
 ) RETURNS INT AS $$
 DECLARE
     v_role VARCHAR;
@@ -330,8 +366,10 @@ BEGIN
         RAISE EXCEPTION 'Unauthorized: Only Host or Moderator can add tasks';
     END IF;
 
-    INSERT INTO tasks (contest_id, title, description, max_score)
-    VALUES (p_contest_id, p_title, p_description, p_max_score)
+    INSERT INTO tasks (contest_id, title, description, max_score,
+                       submission_schema, submission_cooldown_seconds, task_order)
+    VALUES (p_contest_id, p_title, p_description, p_max_score,
+            p_submission_schema, p_submission_cooldown_seconds, p_task_order)
     RETURNING id INTO v_task_id;
 
     RETURN v_task_id;
@@ -344,7 +382,10 @@ CREATE OR REPLACE FUNCTION update_task_native(
     p_user_id INT,
     p_title VARCHAR,
     p_description TEXT,
-    p_max_score NUMERIC
+    p_max_score NUMERIC,
+    p_submission_schema JSONB,
+    p_submission_cooldown_seconds INT DEFAULT 0,
+    p_task_order INT DEFAULT 0
 ) RETURNS VOID AS $$
 DECLARE
     v_contest_id INT;
@@ -369,7 +410,10 @@ BEGIN
     UPDATE tasks
     SET title = p_title,
         description = p_description,
-        max_score = p_max_score
+        max_score = p_max_score,
+        submission_schema = p_submission_schema,
+        submission_cooldown_seconds = p_submission_cooldown_seconds,
+        task_order = p_task_order
     WHERE id = p_task_id;
 END;
 $$ LANGUAGE plpgsql;
@@ -403,20 +447,37 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- H. Enroll in Contest (Invitation Code Checked Natively)
+-- ============================================================
+-- 7. Enrollment Functions
+-- ============================================================
+
+-- H. Enroll in Contest
+--    Checks (all database-native, in this order):
+--      1. Already enrolled → silent no-op (idempotent).
+--      2. Contest existence.
+--      3. Contest is PENDING_APPROVAL → blocked.
+--      4. Late enrollment disabled and contest already started → blocked.
+--      5. User was previously kicked (ban check via kick_log) → blocked.
+--      6. Invitation code validation.
+--      7. Enrollment cap: uses FOR UPDATE lock on contests row to prevent race conditions.
 CREATE OR REPLACE FUNCTION enroll_in_contest(
     p_contest_id INT,
     p_user_id INT,
     p_code VARCHAR DEFAULT NULL
 ) RETURNS VOID AS $$
 DECLARE
-    v_expected_code VARCHAR;
-    v_status VARCHAR;
-    v_is_enrolled BOOLEAN;
+    v_expected_code         VARCHAR;
+    v_status                VARCHAR;
+    v_is_enrolled           BOOLEAN;
+    v_is_banned             BOOLEAN;
+    v_max_participants      INT;
+    v_allow_late            BOOLEAN;
+    v_start_time            TIMESTAMP WITH TIME ZONE;
+    v_current_participants  INT;
 BEGIN
-    -- Check if already enrolled
+    -- 1. Check if already enrolled (idempotent)
     SELECT EXISTS(
-        SELECT 1 FROM enrollments 
+        SELECT 1 FROM enrollments
         WHERE contest_id = p_contest_id AND user_id = p_user_id
     ) INTO v_is_enrolled;
 
@@ -424,24 +485,52 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Fetch contest settings
-    SELECT status, invitation_code INTO v_status, v_expected_code
+    -- 2. Lock the contest row to prevent concurrent enrollment races, and fetch settings
+    SELECT status, invitation_code, max_participants, allow_late_enrollment, start_time
+      INTO v_status, v_expected_code, v_max_participants, v_allow_late, v_start_time
     FROM contests
-    WHERE id = p_contest_id;
+    WHERE id = p_contest_id
+    FOR UPDATE;
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Contest not found';
     END IF;
 
-    -- Cannot enroll in unapproved contests (unless host/creator who is already enrolled)
+    -- 3. Block enrollment in unapproved contests
     IF v_status = 'PENDING_APPROVAL' THEN
         RAISE EXCEPTION 'This contest is pending developer approval';
     END IF;
 
-    -- Validate invitation code if it is set
+    -- 4. Block late enrollment if disabled and contest has already started
+    IF NOT v_allow_late AND NOW() > v_start_time THEN
+        RAISE EXCEPTION 'Late enrollment is disabled for this contest — it has already started';
+    END IF;
+
+    -- 5. Ban check: if the user was previously kicked, they cannot re-enroll
+    SELECT EXISTS(
+        SELECT 1 FROM kick_log
+        WHERE contest_id = p_contest_id AND kicked_user_id = p_user_id
+    ) INTO v_is_banned;
+
+    IF v_is_banned THEN
+        RAISE EXCEPTION 'You have been removed from this contest and cannot re-enroll';
+    END IF;
+
+    -- 6. Validate invitation code if one is set on the contest
     IF v_expected_code IS NOT NULL AND v_expected_code <> '' THEN
         IF p_code IS NULL OR p_code <> v_expected_code THEN
             RAISE EXCEPTION 'Invalid invitation code';
+        END IF;
+    END IF;
+
+    -- 7. Capacity check (only if max_participants is set)
+    IF v_max_participants IS NOT NULL THEN
+        SELECT COUNT(*)::INT INTO v_current_participants
+        FROM enrollments
+        WHERE contest_id = p_contest_id AND role = 'PARTICIPANT';
+
+        IF v_current_participants >= v_max_participants THEN
+            RAISE EXCEPTION 'This contest is full (% / % participants)', v_current_participants, v_max_participants;
         END IF;
     END IF;
 
@@ -460,7 +549,6 @@ CREATE OR REPLACE FUNCTION update_contest_member_role(
 DECLARE
     v_req_role VARCHAR;
 BEGIN
-    -- Only HOST can modify roles
     SELECT role INTO v_req_role
     FROM enrollments
     WHERE contest_id = p_contest_id AND user_id = p_requesting_user_id;
@@ -480,7 +568,474 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- J. Fetch User Profile Statistics (Database-Native)
+-- ============================================================
+-- 8. Submission Validation Functions (DB-Native Schema & Cooldown)
+-- ============================================================
+
+-- J. Validate Submission Schema (Hard-Reject)
+--    Called before inserting any submission into the queue.
+--    Fetches the task's submission_schema JSONB and validates p_submission_data against it.
+--
+--    Schema format supported:
+--      {
+--        "required_keys": ["key1", "key2"],   -- all these keys must be present in submission_data
+--        "numeric_keys": ["key1"]              -- these keys must be JSON number type
+--      }
+--
+--    Raises EXCEPTION (HTTP 400 from API layer) on any validation failure.
+--    No-op if task has no schema (NULL) — backward compatible with task-less submissions.
+CREATE OR REPLACE FUNCTION validate_submission_schema_native(
+    p_task_id INT,
+    p_submission_data JSONB
+) RETURNS VOID AS $$
+DECLARE
+    v_schema        JSONB;
+    v_required_keys TEXT[];
+    v_numeric_keys  TEXT[];
+    v_key           TEXT;
+BEGIN
+    -- Fetch the task's submission schema
+    SELECT submission_schema INTO v_schema
+    FROM tasks
+    WHERE id = p_task_id;
+
+    -- If schema is NULL, no validation needed (e.g. task was created before this feature)
+    IF v_schema IS NULL THEN
+        RETURN;
+    END IF;
+
+    -- Extract required_keys array from schema
+    IF v_schema ? 'required_keys' THEN
+        SELECT ARRAY(
+            SELECT jsonb_array_elements_text(v_schema -> 'required_keys')
+        ) INTO v_required_keys;
+
+        FOREACH v_key IN ARRAY v_required_keys LOOP
+            IF NOT (p_submission_data ? v_key) THEN
+                RAISE EXCEPTION 'Submission schema validation failed: missing required key "%"', v_key;
+            END IF;
+        END LOOP;
+    END IF;
+
+    -- Extract numeric_keys array from schema and verify JSON type
+    IF v_schema ? 'numeric_keys' THEN
+        SELECT ARRAY(
+            SELECT jsonb_array_elements_text(v_schema -> 'numeric_keys')
+        ) INTO v_numeric_keys;
+
+        FOREACH v_key IN ARRAY v_numeric_keys LOOP
+            IF NOT (p_submission_data ? v_key) THEN
+                RAISE EXCEPTION 'Submission schema validation failed: numeric key "%" is missing', v_key;
+            END IF;
+            IF jsonb_typeof(p_submission_data -> v_key) <> 'number' THEN
+                RAISE EXCEPTION 'Submission schema validation failed: key "%" must be a number, got "%"',
+                    v_key, jsonb_typeof(p_submission_data -> v_key);
+            END IF;
+        END LOOP;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- K. Check Submission Cooldown (DB-Native Rate Limiting)
+--    Only enforced if the task's submission_cooldown_seconds > 0.
+--    Queries the user's most recent submission to this task and checks elapsed time.
+--    Raises EXCEPTION with seconds remaining if the cooldown has not expired.
+CREATE OR REPLACE FUNCTION check_submission_cooldown_native(
+    p_task_id INT,
+    p_user_id INT
+) RETURNS VOID AS $$
+DECLARE
+    v_cooldown      INT;
+    v_last_sub_at   TIMESTAMP WITH TIME ZONE;
+    v_elapsed_secs  NUMERIC;
+    v_remaining     NUMERIC;
+BEGIN
+    -- Fetch the cooldown setting for this task
+    SELECT submission_cooldown_seconds INTO v_cooldown
+    FROM tasks
+    WHERE id = p_task_id;
+
+    -- If cooldown is 0 or not set, no rate limiting needed
+    IF v_cooldown IS NULL OR v_cooldown = 0 THEN
+        RETURN;
+    END IF;
+
+    -- Find the most recent submission by this user to this task
+    SELECT MAX(submitted_at) INTO v_last_sub_at
+    FROM submissions
+    WHERE task_id = p_task_id AND user_id = p_user_id;
+
+    -- If no previous submission, cooldown is not applicable
+    IF v_last_sub_at IS NULL THEN
+        RETURN;
+    END IF;
+
+    v_elapsed_secs := EXTRACT(EPOCH FROM (NOW() - v_last_sub_at));
+
+    IF v_elapsed_secs < v_cooldown THEN
+        v_remaining := CEIL(v_cooldown - v_elapsed_secs);
+        RAISE EXCEPTION 'Submission cooldown active: please wait % more second(s) before submitting to this task again', v_remaining::INT;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- 9. Participant Kick & Ban Functions
+-- ============================================================
+
+-- L. Kick Participant (HOST only)
+--    Removes the participant from enrollments and records the action in kick_log.
+--    The kicked user cannot re-enroll (enforced by enroll_in_contest ban check).
+--    The participant's submission history is preserved for record integrity.
+CREATE OR REPLACE FUNCTION kick_participant_native(
+    p_contest_id           INT,
+    p_requesting_user_id   INT,
+    p_target_user_id       INT,
+    p_reason               TEXT DEFAULT NULL
+) RETURNS VOID AS $$
+DECLARE
+    v_req_role      VARCHAR;
+    v_target_role   VARCHAR;
+BEGIN
+    -- Only HOST can kick participants
+    SELECT role INTO v_req_role
+    FROM enrollments
+    WHERE contest_id = p_contest_id AND user_id = p_requesting_user_id;
+
+    IF v_req_role IS NULL OR v_req_role <> 'HOST' THEN
+        RAISE EXCEPTION 'Unauthorized: Only the Host can remove participants';
+    END IF;
+
+    -- Verify the target is enrolled
+    SELECT role INTO v_target_role
+    FROM enrollments
+    WHERE contest_id = p_contest_id AND user_id = p_target_user_id;
+
+    IF v_target_role IS NULL THEN
+        RAISE EXCEPTION 'Target user is not enrolled in this contest';
+    END IF;
+
+    -- A HOST cannot kick themselves
+    IF p_target_user_id = p_requesting_user_id THEN
+        RAISE EXCEPTION 'A Host cannot remove themselves from the contest';
+    END IF;
+
+    -- Another HOST cannot be kicked (only MODERATOR or PARTICIPANT)
+    IF v_target_role = 'HOST' THEN
+        RAISE EXCEPTION 'Cannot remove another Host from the contest';
+    END IF;
+
+    -- Record the kick in the audit log (acts as permanent ban for this contest)
+    INSERT INTO kick_log (contest_id, kicked_user_id, kicked_by, reason)
+    VALUES (p_contest_id, p_target_user_id, p_requesting_user_id, p_reason);
+
+    -- Remove the enrollment
+    DELETE FROM enrollments
+    WHERE contest_id = p_contest_id AND user_id = p_target_user_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- 10. Contest Visibility Functions
+-- ============================================================
+
+-- M. Update Contest Visibility Settings (HOST or MODERATOR)
+--    Allows fine-grained control over what public viewers can see on the contest page.
+CREATE OR REPLACE FUNCTION update_contest_visibility(
+    p_contest_id            INT,
+    p_user_id               INT,
+    p_show_participant_count BOOLEAN,
+    p_show_leaderboard       BOOLEAN,
+    p_show_member_list       BOOLEAN,
+    p_show_task_list         BOOLEAN,
+    p_show_statistics        BOOLEAN,
+    p_show_submission_count  BOOLEAN
+) RETURNS VOID AS $$
+DECLARE
+    v_role VARCHAR;
+BEGIN
+    SELECT role INTO v_role
+    FROM enrollments
+    WHERE contest_id = p_contest_id AND user_id = p_user_id;
+
+    IF v_role IS NULL OR v_role NOT IN ('HOST', 'MODERATOR') THEN
+        RAISE EXCEPTION 'Unauthorized: Only Host or Moderator can update visibility settings';
+    END IF;
+
+    INSERT INTO contest_visibility (
+        contest_id, show_participant_count, show_leaderboard,
+        show_member_list, show_task_list, show_statistics,
+        show_submission_count, updated_at
+    )
+    VALUES (
+        p_contest_id, p_show_participant_count, p_show_leaderboard,
+        p_show_member_list, p_show_task_list, p_show_statistics,
+        p_show_submission_count, NOW()
+    )
+    ON CONFLICT (contest_id) DO UPDATE SET
+        show_participant_count = EXCLUDED.show_participant_count,
+        show_leaderboard       = EXCLUDED.show_leaderboard,
+        show_member_list       = EXCLUDED.show_member_list,
+        show_task_list         = EXCLUDED.show_task_list,
+        show_statistics        = EXCLUDED.show_statistics,
+        show_submission_count  = EXCLUDED.show_submission_count,
+        updated_at             = NOW();
+END;
+$$ LANGUAGE plpgsql;
+
+-- N. Get Contest Visibility Settings
+CREATE OR REPLACE FUNCTION get_contest_visibility(p_contest_id INT)
+RETURNS TABLE (
+    show_participant_count  BOOLEAN,
+    show_leaderboard        BOOLEAN,
+    show_member_list        BOOLEAN,
+    show_task_list          BOOLEAN,
+    show_statistics         BOOLEAN,
+    show_submission_count   BOOLEAN,
+    updated_at              TIMESTAMP WITH TIME ZONE
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        cv.show_participant_count,
+        cv.show_leaderboard,
+        cv.show_member_list,
+        cv.show_task_list,
+        cv.show_statistics,
+        cv.show_submission_count,
+        cv.updated_at
+    FROM contest_visibility cv
+    WHERE cv.contest_id = p_contest_id;
+
+    -- If no visibility row exists yet (e.g. created before this feature), return defaults
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT TRUE, TRUE, FALSE, TRUE, FALSE, FALSE, NULL::TIMESTAMP WITH TIME ZONE;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- 11. Contest Enrollment Info Function
+-- ============================================================
+
+-- O. Get Contest Enrollment Info
+--    Returns enrollment capacity, current participant count, remaining spots, and ban count.
+--    Used by the API to expose contest capacity status to the frontend.
+CREATE OR REPLACE FUNCTION get_contest_enrollment_info(p_contest_id INT)
+RETURNS TABLE (
+    max_participants        INT,
+    current_participants    INT,
+    spots_remaining         INT,
+    allow_late_enrollment   BOOLEAN,
+    total_kicked            INT
+) AS $$
+DECLARE
+    v_max INT;
+    v_allow_late BOOLEAN;
+    v_current INT;
+    v_kicked INT;
+BEGIN
+    SELECT c.max_participants, c.allow_late_enrollment
+      INTO v_max, v_allow_late
+    FROM contests c
+    WHERE c.id = p_contest_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Contest with ID % not found', p_contest_id;
+    END IF;
+
+    SELECT COUNT(*)::INT INTO v_current
+    FROM enrollments
+    WHERE contest_id = p_contest_id AND role = 'PARTICIPANT';
+
+    SELECT COUNT(*)::INT INTO v_kicked
+    FROM kick_log
+    WHERE contest_id = p_contest_id;
+
+    RETURN QUERY SELECT
+        v_max,
+        v_current,
+        CASE WHEN v_max IS NULL THEN NULL ELSE GREATEST(0, v_max - v_current) END,
+        v_allow_late,
+        v_kicked;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- 12. Contest Announcements Functions
+-- ============================================================
+
+-- P. Post Announcement (HOST or MODERATOR)
+CREATE OR REPLACE FUNCTION post_announcement_native(
+    p_contest_id    INT,
+    p_author_id     INT,
+    p_title         VARCHAR,
+    p_body          TEXT
+) RETURNS INT AS $$
+DECLARE
+    v_role          VARCHAR;
+    v_ann_id        INT;
+BEGIN
+    SELECT role INTO v_role
+    FROM enrollments
+    WHERE contest_id = p_contest_id AND user_id = p_author_id;
+
+    IF v_role IS NULL OR v_role NOT IN ('HOST', 'MODERATOR') THEN
+        RAISE EXCEPTION 'Unauthorized: Only Host or Moderator can post announcements';
+    END IF;
+
+    INSERT INTO contest_announcements (contest_id, author_id, title, body)
+    VALUES (p_contest_id, p_author_id, p_title, p_body)
+    RETURNING id INTO v_ann_id;
+
+    RETURN v_ann_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Q. Delete Announcement (HOST or MODERATOR of the same contest)
+CREATE OR REPLACE FUNCTION delete_announcement_native(
+    p_announcement_id   INT,
+    p_user_id           INT
+) RETURNS VOID AS $$
+DECLARE
+    v_contest_id    INT;
+    v_role          VARCHAR;
+BEGIN
+    SELECT contest_id INTO v_contest_id
+    FROM contest_announcements
+    WHERE id = p_announcement_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Announcement not found';
+    END IF;
+
+    SELECT role INTO v_role
+    FROM enrollments
+    WHERE contest_id = v_contest_id AND user_id = p_user_id;
+
+    IF v_role IS NULL OR v_role NOT IN ('HOST', 'MODERATOR') THEN
+        RAISE EXCEPTION 'Unauthorized: Only Host or Moderator can delete announcements';
+    END IF;
+
+    DELETE FROM contest_announcements WHERE id = p_announcement_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- 13. Contest Profile Aggregator
+-- ============================================================
+
+-- R. Get Contest Profile
+--    Returns a full profile snapshot for a contest including metadata, capacity info,
+--    visibility config, announcement count, and whether the viewer is enrolled.
+--    This is the "single query" profile endpoint — all aggregation happens in the DB.
+CREATE OR REPLACE FUNCTION get_contest_profile(
+    p_contest_id        INT,
+    p_viewer_user_id    INT DEFAULT NULL
+) RETURNS TABLE (
+    contest_id              INT,
+    title                   VARCHAR,
+    ranking_strategy        VARCHAR,
+    start_time              TIMESTAMP WITH TIME ZONE,
+    freeze_time             TIMESTAMP WITH TIME ZONE,
+    end_time                TIMESTAMP WITH TIME ZONE,
+    status                  VARCHAR,
+    judging_description     TEXT,
+    invitation_code         VARCHAR,
+    max_participants        INT,
+    allow_late_enrollment   BOOLEAN,
+    current_participants    INT,
+    spots_remaining         INT,
+    total_kicked            INT,
+    task_count              INT,
+    announcement_count      INT,
+    latest_announcement_title VARCHAR,
+    show_participant_count  BOOLEAN,
+    show_leaderboard        BOOLEAN,
+    show_member_list        BOOLEAN,
+    show_task_list          BOOLEAN,
+    show_statistics         BOOLEAN,
+    show_submission_count   BOOLEAN,
+    viewer_role             VARCHAR,
+    viewer_is_enrolled      BOOLEAN
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH enroll_info AS (
+        SELECT
+            e.contest_id,
+            COUNT(*) FILTER (WHERE e.role = 'PARTICIPANT')::INT AS participant_count
+        FROM enrollments e
+        WHERE e.contest_id = p_contest_id
+        GROUP BY e.contest_id
+    ),
+    kick_info AS (
+        SELECT COUNT(*)::INT AS kicked_count
+        FROM kick_log
+        WHERE contest_id = p_contest_id
+    ),
+    task_info AS (
+        SELECT COUNT(*)::INT AS task_count
+        FROM tasks
+        WHERE contest_id = p_contest_id
+    ),
+    ann_info AS (
+        SELECT
+            COUNT(*)::INT AS ann_count,
+            (SELECT ca2.title FROM contest_announcements ca2
+             WHERE ca2.contest_id = p_contest_id
+             ORDER BY ca2.posted_at DESC LIMIT 1) AS latest_title
+        FROM contest_announcements ca
+        WHERE ca.contest_id = p_contest_id
+    ),
+    viewer_info AS (
+        SELECT e.role AS v_role
+        FROM enrollments e
+        WHERE e.contest_id = p_contest_id AND e.user_id = p_viewer_user_id
+    )
+    SELECT
+        c.id,
+        c.title,
+        c.ranking_strategy,
+        c.start_time,
+        c.freeze_time,
+        c.end_time,
+        c.status,
+        c.judging_description,
+        CASE WHEN COALESCE(vi.v_role, '') IN ('HOST', 'MODERATOR') THEN c.invitation_code ELSE NULL END,
+        c.max_participants,
+        c.allow_late_enrollment,
+        COALESCE(ei.participant_count, 0),
+        CASE WHEN c.max_participants IS NULL THEN NULL
+             ELSE GREATEST(0, c.max_participants - COALESCE(ei.participant_count, 0)) END,
+        COALESCE(ki.kicked_count, 0),
+        COALESCE(ti.task_count, 0),
+        COALESCE(ai.ann_count, 0),
+        ai.latest_title,
+        COALESCE(cv.show_participant_count, TRUE),
+        COALESCE(cv.show_leaderboard, TRUE),
+        COALESCE(cv.show_member_list, FALSE),
+        COALESCE(cv.show_task_list, TRUE),
+        COALESCE(cv.show_statistics, FALSE),
+        COALESCE(cv.show_submission_count, FALSE),
+        vi.v_role,
+        (vi.v_role IS NOT NULL)
+    FROM contests c
+    LEFT JOIN enroll_info ei       ON TRUE
+    LEFT JOIN kick_info ki         ON TRUE
+    LEFT JOIN task_info ti         ON TRUE
+    LEFT JOIN ann_info ai          ON TRUE
+    LEFT JOIN contest_visibility cv ON cv.contest_id = c.id
+    LEFT JOIN viewer_info vi       ON TRUE
+    WHERE c.id = p_contest_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- 14. User Profile & Statistics Functions (Unchanged from v0.4.0)
+-- ============================================================
+
+-- S. Fetch User Profile Statistics
 CREATE OR REPLACE FUNCTION get_user_profile_stats(p_user_id INT)
 RETURNS TABLE (
     total_submissions INT,
@@ -500,28 +1055,18 @@ DECLARE
     v_max_score NUMERIC;
     v_verdicts JSONB;
 BEGIN
-    -- Total submissions
     SELECT COUNT(*)::INT INTO v_total_subs FROM submissions WHERE user_id = p_user_id;
-
-    -- Total contests joined
     SELECT COUNT(DISTINCT contest_id)::INT INTO v_total_contests FROM enrollments WHERE user_id = p_user_id;
-
-    -- Unique tasks attempted
     SELECT COUNT(DISTINCT task_id)::INT INTO v_tasks_attempted FROM submissions WHERE user_id = p_user_id AND task_id IS NOT NULL;
 
-    -- Fully completed tasks (where score >= task's max_score)
     SELECT COUNT(DISTINCT s.task_id)::INT INTO v_completed_tasks
     FROM submissions s
     JOIN tasks t ON s.task_id = t.id
     WHERE s.user_id = p_user_id AND s.score >= t.max_score AND s.status = 'COMPLETED';
 
-    -- Average score
     SELECT COALESCE(AVG(score), 0)::NUMERIC(10,2) INTO v_avg_score FROM submissions WHERE user_id = p_user_id AND status = 'COMPLETED';
-
-    -- Max score
     SELECT COALESCE(MAX(score), 0)::NUMERIC(10,2) INTO v_max_score FROM submissions WHERE user_id = p_user_id AND status = 'COMPLETED';
 
-    -- Verdict breakdown as JSONB
     SELECT COALESCE(jsonb_object_agg(COALESCE(verdict, 'UNKNOWN'), cnt), '{}'::jsonb)
     INTO v_verdicts
     FROM (
@@ -535,7 +1080,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- K. Fetch User Activity Graph (Submissions Count by Date)
+-- T. Fetch User Activity Graph (Submissions Count by Date)
 CREATE OR REPLACE FUNCTION get_user_activity_graph(p_user_id INT)
 RETURNS TABLE (
     activity_date DATE,
@@ -551,7 +1096,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- L. Fetch User Contest Participation History
+-- U. Fetch User Contest Participation History
 CREATE OR REPLACE FUNCTION get_user_contest_history(p_user_id INT)
 RETURNS TABLE (
     contest_id INT,
@@ -570,7 +1115,7 @@ BEGIN
         WHERE e.user_id = p_user_id
     ),
     contest_standings AS (
-        SELECT 
+        SELECT
             ec.contest_id,
             l.user_id,
             l.total_score,
@@ -578,7 +1123,7 @@ BEGIN
         FROM enrolled_contests ec
         CROSS JOIN LATERAL get_leaderboard(ec.contest_id, TRUE) l
     )
-    SELECT 
+    SELECT
         ec.contest_id,
         ec.title AS contest_title,
         ec.role,
@@ -591,7 +1136,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- M. Fetch User Submission History
+-- V. Fetch User Submission History
 CREATE OR REPLACE FUNCTION get_user_submission_history(p_user_id INT, p_limit INT DEFAULT 20)
 RETURNS TABLE (
     submission_id INT,
@@ -605,7 +1150,7 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         s.id,
         s.contest_id,
         c.title AS contest_title,
@@ -623,7 +1168,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- N. Fetch Contest-Wide Statistics (With scoreboard freeze rules)
+-- W. Fetch Contest-Wide Statistics
 CREATE OR REPLACE FUNCTION get_contest_statistics(p_contest_id INT, p_as_admin BOOLEAN DEFAULT FALSE)
 RETURNS TABLE (
     total_participants INT,
@@ -643,7 +1188,7 @@ DECLARE
 BEGIN
     SELECT start_time, freeze_time, end_time INTO v_start_time, v_freeze_time, v_end_time
     FROM contests WHERE id = p_contest_id;
-    
+
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Contest with ID % not found', p_contest_id;
     END IF;
@@ -654,29 +1199,25 @@ BEGIN
         v_effective_freeze := v_freeze_time;
     END IF;
 
-    -- Total participants (enrolled with role = 'PARTICIPANT')
-    SELECT COUNT(*)::INT INTO v_total_parts 
-    FROM enrollments 
+    SELECT COUNT(*)::INT INTO v_total_parts
+    FROM enrollments
     WHERE contest_id = p_contest_id AND role = 'PARTICIPANT';
 
-    -- Active participants (submitted at least once before freeze)
     SELECT COUNT(DISTINCT user_id)::INT INTO v_active_parts
     FROM submissions
-    WHERE contest_id = p_contest_id 
-      AND submitted_at >= v_start_time 
+    WHERE contest_id = p_contest_id
+      AND submitted_at >= v_start_time
       AND submitted_at < v_effective_freeze;
 
-    -- Total submissions before freeze
     SELECT COUNT(*)::INT INTO v_total_subs
     FROM submissions
     WHERE contest_id = p_contest_id
       AND submitted_at >= v_start_time
       AND submitted_at < v_effective_freeze;
 
-    -- Task-by-task statistics
     SELECT COALESCE(jsonb_agg(t_row), '[]'::jsonb) INTO v_task_stats
     FROM (
-        SELECT 
+        SELECT
             t.id AS task_id,
             t.title AS task_title,
             t.max_score,
@@ -685,20 +1226,20 @@ BEGIN
             COUNT(s.id)::INT AS total_attempts,
             COUNT(DISTINCT CASE WHEN s.score >= t.max_score THEN s.user_id END)::INT AS solved_users
         FROM tasks t
-        LEFT JOIN submissions s ON t.id = s.task_id 
-          AND s.submitted_at >= v_start_time 
+        LEFT JOIN submissions s ON t.id = s.task_id
+          AND s.submitted_at >= v_start_time
           AND s.submitted_at < v_effective_freeze
           AND s.status = 'COMPLETED'
         WHERE t.contest_id = p_contest_id
         GROUP BY t.id, t.title, t.max_score
-        ORDER BY t.id ASC
+        ORDER BY t.task_order ASC, t.id ASC
     ) t_row;
 
     RETURN QUERY SELECT v_total_parts, v_active_parts, v_total_subs, v_task_stats;
 END;
 $$ LANGUAGE plpgsql;
 
--- O. Fetch Contest Submission Timeline Chart Data
+-- X. Fetch Contest Submission Timeline Chart Data
 CREATE OR REPLACE FUNCTION get_contest_submission_timeline(p_contest_id INT, p_as_admin BOOLEAN DEFAULT FALSE)
 RETURNS TABLE (
     bucket_start TIMESTAMP WITH TIME ZONE,
@@ -738,7 +1279,7 @@ BEGIN
     END IF;
 
     RETURN QUERY
-    SELECT 
+    SELECT
         date_bin(v_stride, submitted_at, v_start) AS b_start,
         COUNT(*)::INT
     FROM submissions
@@ -750,7 +1291,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- P. Fetch Participant Score Cumulative Progression
+-- Y. Fetch Participant Score Cumulative Progression
 CREATE OR REPLACE FUNCTION get_participant_score_progression(p_contest_id INT, p_user_id INT)
 RETURNS TABLE (
     submitted_at TIMESTAMP WITH TIME ZONE,
@@ -770,7 +1311,7 @@ BEGIN
     IF v_has_tasks THEN
         IF v_strategy = 'MAX' THEN
             RETURN QUERY
-            SELECT 
+            SELECT
                 s.submitted_at,
                 (
                     SELECT COALESCE(MAX(sub.score), 0)
@@ -785,9 +1326,9 @@ BEGIN
               AND s.user_id = p_user_id
               AND s.status = 'COMPLETED'
             ORDER BY s.submitted_at ASC;
-        ELSE -- 'SUM' strategy: Sum of best score on each task up to that submission time
+        ELSE -- 'SUM' strategy
             RETURN QUERY
-            SELECT 
+            SELECT
                 s.submitted_at,
                 (
                     SELECT COALESCE(SUM(best.max_score), 0)
@@ -811,7 +1352,7 @@ BEGIN
         -- Fallback if no tasks exist
         IF v_strategy = 'MAX' THEN
             RETURN QUERY
-            SELECT 
+            SELECT
                 s.submitted_at,
                 (
                     SELECT COALESCE(MAX(sub.score), 0)
@@ -828,7 +1369,7 @@ BEGIN
             ORDER BY s.submitted_at ASC;
         ELSE
             RETURN QUERY
-            SELECT 
+            SELECT
                 s.submitted_at,
                 (
                     SELECT COALESCE(SUM(sub.score), 0)
