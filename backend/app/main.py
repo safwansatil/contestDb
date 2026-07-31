@@ -380,21 +380,13 @@ async def create_contest(payload: ContestCreateRequest, current_user: Dict[str, 
                 logger.error(f"Error creating contest: {e}")
                 raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/contests/{contest_id}/approve")
-async def approve_contest(contest_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
-    """
-    Developer/Admin action to approve a contest and make it live.
-    """
-    async with get_db_connection() as conn:
-        async with conn.cursor() as cur:
-            try:
-                await cur.execute("SELECT approve_contest_native(%s);", (contest_id,))
-                await conn.commit()
-                return {"message": "Contest successfully approved and is now active"}
-            except Exception as e:
-                await conn.rollback()
-                logger.error(f"Error approving contest: {e}")
-                raise HTTPException(status_code=400, detail=str(e))
+
+# NOTE: Contest approval is intentionally NOT exposed as an API endpoint.
+# To approve a pending contest, connect to the database directly and run:
+#   SELECT approve_contest_native(<contest_id>);
+# or:
+#   UPDATE contests SET status = 'ACTIVE' WHERE id = <contest_id>;
+# This is a deliberate design choice — approval is a developer/admin terminal action only.
 
 @app.put("/contests/{contest_id}")
 async def update_contest(contest_id: int, payload: ContestCreateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):

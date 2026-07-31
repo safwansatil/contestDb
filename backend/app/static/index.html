@@ -985,8 +985,8 @@
                 }
                 
                 if (contest.status === 'PENDING_APPROVAL') {
-                    // Show Developer Approve button
-                    actionButtons += `<button class="btn btn-success" style="margin-top:14px; width:100%; background: linear-gradient(135deg, var(--accent-purple), #6d28d9); box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);" onclick="approveContest(${contest.id})">Approve Contest (Dev Action)</button>`;
+                    // Approval is a DB-only developer action — no UI button exposed
+                    actionButtons += `<p style="margin-top:14px; font-size:12px; color:var(--accent-purple); background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.25); border-radius:8px; padding:10px 12px;">⏳ <strong>Awaiting Developer Approval</strong><br>This contest is pending. Approval requires direct database access — a developer must run <code>SELECT approve_contest_native(${contest.id});</code> in the terminal.</p>`;
                 }
 
                 if (contest.user_role === 'HOST') {
@@ -1148,26 +1148,10 @@
             }
         }
 
-        // Approve contest (dev action)
-        async function approveContest(contestId) {
-            log(`Approving contest #${contestId}...`, 'info');
-            try {
-                const response = await fetch(`/contests/${contestId}/approve`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
-                
-                const data = await response.json();
-                if (response.ok) {
-                    log('Contest approved! It is now ACTIVE and live.');
-                    loadContests();
-                } else {
-                    log('Approval failed: ' + data.detail, 'error');
-                }
-            } catch (err) {
-                log('Network error approving contest: ' + err.message, 'error');
-            }
-        }
+
+        // NOTE: approveContest() has been intentionally removed.
+        // Contest approval is a developer/admin terminal-only action.
+        // Connect to the DB and run: SELECT approve_contest_native(<id>);
 
         // Delete contest
         async function deleteContest(contestId) {
