@@ -647,7 +647,7 @@
                     </div>
                     <div class="form-group">
                         <label for="payload-data">Submission Data (JSONB)</label>
-                        <textarea id="payload-data" style="height: 100px;">{"score": 90.0, "verdict": "AC"}</textarea>
+                        <textarea id="payload-data" style="height: 100px;">{"source_code": "print('hello')"}</textarea>
                     </div>
                     <button class="btn btn-primary" onclick="submitPayload()">Submit to Database Queue</button>
                 </div>
@@ -1429,7 +1429,11 @@
             if (taskText.toLowerCase().includes('speed') || taskText.toLowerCase().includes('run')) {
                 textarea.value = JSON.stringify({ "run_time_seconds": 38.5, "restarts": 0 }, null, 2);
             } else {
-                textarea.value = JSON.stringify({ "score": 95.0, "verdict": "AC" }, null, 2);
+                textarea.value = JSON.stringify(
+                    { "source_code": "print('hello')" },
+                    null,
+                    2
+                );
             }
         }
 

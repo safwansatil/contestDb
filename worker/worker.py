@@ -32,6 +32,17 @@ def evaluate_submission(payload: dict) -> tuple[float, str]:
     """
     logger.info(f"Evaluating payload: {payload}")
 
+    # Scores and verdicts are trusted outputs produced only by the worker.
+    # Participants must never provide them in submission_data.
+    forbidden_fields = {"score", "verdict"}
+    supplied_forbidden_fields = forbidden_fields.intersection(payload)
+
+    if supplied_forbidden_fields:
+        logger.warning(
+            "Rejected submission containing trusted fields: %s",
+            sorted(supplied_forbidden_fields),
+        )
+        return 0.0, "INVALID_SUBMISSION"
     # Case 1: LFR (Line Follower Robot) run telemetry
     if "run_time_seconds" in payload:
         run_time = float(payload["run_time_seconds"])
@@ -53,13 +64,7 @@ def evaluate_submission(payload: dict) -> tuple[float, str]:
         else:
             return 0.0, "WRONG_ANSWER"
 
-    # Case 3: Direct score injection (e.g. Quiz, Chess match, Manual Jury grading)
-    elif "score" in payload:
-        score = float(payload["score"])
-        verdict = str(payload.get("verdict", "GRADED"))
-        return score, verdict
-
-    # Case 4: Default fallback
+    # Case 3: Default fallback
     else:
         return 50.0, "GENERIC_SUCCESS"
 
