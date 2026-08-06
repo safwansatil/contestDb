@@ -650,142 +650,65 @@ async def list_users(current_user: Dict[str, Any] = Depends(get_current_user)):
 # Submission Endpoints
 @app.post("/submissions", status_code=status.HTTP_201_CREATED)
 async def create_submission(
-    payload: SubmissionRequest, 
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    payload: SubmissionRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
-    Ingest a new submission. Inserts it in PENDING state into the queue.
-    Resolves submitting user natively from JWT authentication.
-    Natively validates enrollment in the database before accepting.
+    Validate and insert a submission atomically through PostgreSQL.
     """
     user_id = current_user["user_id"]
 
-    trusted_fields = {"score", "verdict"}
-    supplied_trusted_fields = trusted_fields.intersection(payload.submission_data)
-
-    if supplied_trusted_fields:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Submission data cannot contain trusted result fields: "
-                + ", ".join(sorted(supplied_trusted_fields))
-            )
-        )
-
     async with get_db_connection() as conn:
         async with conn.cursor() as cur:
-            # 1. Database-native check: Verify the user is enrolled in this contest
-            await cur.execute(
-                "SELECT role FROM enrollments WHERE contest_id = %s AND user_id = %s",
-                (payload.contest_id, user_id)
-            )
-            enrolled = await cur.fetchone()
-            if not enrolled:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"User '{current_user['username']}' (ID {user_id}) is not enrolled in contest {payload.contest_id}"
-                )
-
-            # 1a. Verify contest is active and currently running (database-native timing checks)
-            await cur.execute(
-                """
-                SELECT status, start_time, end_time FROM contests WHERE id = %s
-                """,
-                (payload.contest_id,)
-            )
-            contest_row = await cur.fetchone()
-            if not contest_row:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Contest not found"
-                )
-            
-            c_status, c_start_time, c_end_time = contest_row
-            
-            if c_status != 'ACTIVE':
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Submissions are only allowed for ACTIVE contests"
-                )
-            
-            # Fetch current database time
-            await cur.execute("SELECT CURRENT_TIMESTAMP;")
-            now_row = await cur.fetchone()
-            db_now = now_row[0]
-            
-            if db_now < c_start_time:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Submissions are not allowed yet. The contest has not started."
-                )
-            
-            if db_now > c_end_time:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Submissions are closed. The contest has ended."
-                )
-
-            # 1b. Verify task belongs to contest if task_id is provided
-            if payload.task_id:
+            try:
                 await cur.execute(
-                    "SELECT 1 FROM tasks WHERE id = %s AND contest_id = %s",
-                    (payload.task_id, payload.contest_id)
+                    """
+                    SELECT submission_id, submitted_at
+                    FROM submit_entry_native(
+                        %s,
+                        %s,
+                        %s,
+                        %s::jsonb
+                    );
+                    """,
+                    (
+                        payload.contest_id,
+                        user_id,
+                        payload.task_id,
+                        json.dumps(payload.submission_data),
+                    ),
                 )
-                task_belongs = await cur.fetchone()
-                if not task_belongs:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Task {payload.task_id} does not belong to contest {payload.contest_id}"
-                    )
 
-            # 1c. DB-native submission cooldown check (no-op if cooldown_seconds = 0)
-            if payload.task_id:
-                try:
-                    await cur.execute(
-                        "SELECT check_submission_cooldown_native(%s, %s);",
-                        (payload.task_id, user_id)
-                    )
-                except Exception as e:
+                row = await cur.fetchone()
+                await conn.commit()
+
+                return {
+                    "message": "Submission successfully placed in queue",
+                    "submission_id": row[0],
+                    "submitted_at": row[1],
+                }
+
+            except Exception as exc:
+                await conn.rollback()
+
+                error_message = str(exc)
+
+                if "cooldown active" in error_message.lower():
                     raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                        detail=str(e)
+                        detail=error_message,
                     )
 
-            # 1d. DB-native submission schema validation (hard-reject on mismatch)
-            if payload.task_id:
-                try:
-                    import json as _json
-                    await cur.execute(
-                        "SELECT validate_submission_schema_native(%s, %s::jsonb);",
-                        (payload.task_id, _json.dumps(payload.submission_data))
-                    )
-                except Exception as e:
+                if "not enrolled" in error_message.lower():
                     raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=str(e)
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=error_message,
                     )
 
-            # 2. Ingest the submission into the PostgreSQL queue
-            submission_json = json.dumps(payload.submission_data)
-            
-            await cur.execute(
-                """
-                INSERT INTO submissions (contest_id, user_id, task_id, submission_data, status)
-                VALUES (%s, %s, %s, %s::jsonb, 'PENDING')
-                RETURNING id, submitted_at;
-                """,
-                (payload.contest_id, user_id, payload.task_id, submission_json)
-            )
-            row = await cur.fetchone()
-            
-            # Commit the transaction block
-            await conn.commit()
-            
-            return {
-                "message": "Submission successfully placed in queue",
-                "submission_id": row[0],
-                "submitted_at": row[1]
-            }
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=error_message,
+                )
 
 @app.get("/contests/{contest_id}/leaderboard")
 async def get_contest_leaderboard(
