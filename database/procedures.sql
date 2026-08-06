@@ -739,6 +739,120 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- L. Submit Entry Atomically
+--    Performs all validation and inserts the submission in one transaction.
+CREATE OR REPLACE FUNCTION submit_entry_native(
+    p_contest_id INT,
+    p_user_id INT,
+    p_task_id INT,
+    p_submission_data JSONB
+)
+RETURNS TABLE (
+    submission_id INT,
+    submitted_at TIMESTAMP WITH TIME ZONE
+) AS $$
+DECLARE
+    v_contest_status VARCHAR;
+    v_start_time TIMESTAMP WITH TIME ZONE;
+    v_end_time TIMESTAMP WITH TIME ZONE;
+    v_submission_id INT;
+    v_submitted_at TIMESTAMP WITH TIME ZONE;
+BEGIN
+    IF p_submission_data IS NULL
+       OR jsonb_typeof(p_submission_data) <> 'object' THEN
+        RAISE EXCEPTION 'Submission data must be a JSON object';
+    END IF;
+
+    -- Score and verdict are trusted worker outputs.
+    IF p_submission_data ?| ARRAY['score', 'verdict'] THEN
+        RAISE EXCEPTION
+            'Submission data cannot contain trusted result fields: score or verdict';
+    END IF;
+
+    SELECT status, start_time, end_time
+    INTO v_contest_status, v_start_time, v_end_time
+    FROM contests
+    WHERE id = p_contest_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Contest not found';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM enrollments
+        WHERE contest_id = p_contest_id
+          AND user_id = p_user_id
+    ) THEN
+        RAISE EXCEPTION
+            'User is not enrolled in contest %',
+            p_contest_id;
+    END IF;
+
+    IF v_contest_status <> 'ACTIVE' THEN
+        RAISE EXCEPTION
+            'Submissions are only allowed for ACTIVE contests';
+    END IF;
+
+    IF CURRENT_TIMESTAMP < v_start_time THEN
+        RAISE EXCEPTION
+            'Submissions are not allowed yet. The contest has not started';
+    END IF;
+
+    IF CURRENT_TIMESTAMP > v_end_time THEN
+        RAISE EXCEPTION
+            'Submissions are closed. The contest has ended';
+    END IF;
+
+    IF p_task_id IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM tasks
+            WHERE id = p_task_id
+              AND contest_id = p_contest_id
+        ) THEN
+            RAISE EXCEPTION
+                'Task % does not belong to contest %',
+                p_task_id,
+                p_contest_id;
+        END IF;
+
+        -- Prevent concurrent requests from bypassing the cooldown.
+        PERFORM pg_advisory_xact_lock(p_user_id, p_task_id);
+
+        PERFORM check_submission_cooldown_native(
+            p_task_id,
+            p_user_id
+        );
+
+        PERFORM validate_submission_schema_native(
+            p_task_id,
+            p_submission_data
+        );
+    END IF;
+
+    INSERT INTO submissions (
+        contest_id,
+        user_id,
+        task_id,
+        submission_data,
+        status
+    )
+    VALUES (
+        p_contest_id,
+        p_user_id,
+        p_task_id,
+        p_submission_data,
+        'PENDING'
+    )
+    RETURNING id, submissions.submitted_at
+    INTO v_submission_id, v_submitted_at;
+
+    RETURN QUERY
+    SELECT v_submission_id, v_submitted_at;
+END;
+$$ LANGUAGE plpgsql;
+
 -- ============================================================
 -- 9. Participant Kick & Ban Functions
 -- ============================================================
