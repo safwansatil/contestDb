@@ -659,6 +659,19 @@ async def create_submission(
     Natively validates enrollment in the database before accepting.
     """
     user_id = current_user["user_id"]
+
+    trusted_fields = {"score", "verdict"}
+    supplied_trusted_fields = trusted_fields.intersection(payload.submission_data)
+
+    if supplied_trusted_fields:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Submission data cannot contain trusted result fields: "
+                + ", ".join(sorted(supplied_trusted_fields))
+            )
+        )
+
     async with get_db_connection() as conn:
         async with conn.cursor() as cur:
             # 1. Database-native check: Verify the user is enrolled in this contest
