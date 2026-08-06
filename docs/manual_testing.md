@@ -360,3 +360,23 @@ curl http://127.0.0.1:8000/users/search?q=sa
 ```
 *Expected:* Users with username matching "sa" (e.g. sayma, satil).
 
+### M. Contest Search & Filtering
+Search for contests containing a keyword:
+```bash
+curl http://127.0.0.1:8000/contests?q=code
+```
+*Expected:* List of contests containing the string "code" in their title.
+
+Filter contests by timeline status (ONGOING):
+```bash
+curl http://127.0.0.1:8000/contests?timeline=ONGOING
+```
+*Expected:* List of contests where `start_time <= NOW()` and `end_time >= NOW()`.
+
+Filter contests by ranking strategy (ICPC):
+```bash
+curl http://127.0.0.1:8000/contests?strategy=ICPC
+```
+*Expected:* List of contests with the ICPC ranking strategy.
+
+

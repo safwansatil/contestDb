@@ -166,3 +166,6 @@ CREATE INDEX IF NOT EXISTS idx_announcements_contest   ON contest_announcements(
 
 -- Trigram index for user search (v0.6.0)
 CREATE INDEX IF NOT EXISTS idx_users_username_trgm     ON users USING gin (username gin_trgm_ops);
+
+-- Trigram index for contest search (v0.7.0)
+CREATE INDEX IF NOT EXISTS idx_contests_title_trgm     ON contests USING gin (title gin_trgm_ops);

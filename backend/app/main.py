@@ -239,32 +239,29 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
 
 # Contest Endpoints
 @app.get("/contests")
-async def get_contests(current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)):
+async def get_contests(
+    q: Optional[str] = Query(None, description="Search contests by title"),
+    status: Optional[str] = Query(None, description="Filter contests by status"),
+    strategy: Optional[str] = Query(None, description="Filter contests by ranking strategy"),
+    timeline: Optional[str] = Query(None, description="Filter contests by timeline status (UPCOMING, ONGOING, COMPLETED)"),
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+):
     """
-    Fetch all contests. If authenticated, return the user's role.
+    Fetch all contests matching filters. If authenticated, return the user's role.
     Only return invitation codes to HOST or MODERATOR users.
     """
     user_id = current_user["user_id"] if current_user else None
+    print(f"DEBUG get_contests: user_id={user_id}, q={q!r}, status={status!r}, strategy={strategy!r}, timeline={timeline!r}")
     async with get_db_connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                """
-                SELECT c.id, c.title, c.ranking_strategy, c.start_time, c.freeze_time, c.end_time,
-                       c.status, c.judging_description, c.invitation_code, e.role,
-                       c.max_participants, c.allow_late_enrollment,
-                       cv.show_participant_count, cv.show_leaderboard, cv.show_member_list,
-                       cv.show_task_list, cv.show_statistics, cv.show_submission_count
-                FROM contests c
-                LEFT JOIN enrollments e ON c.id = e.contest_id AND e.user_id = %s
-                LEFT JOIN contest_visibility cv ON c.id = cv.contest_id
-                ORDER BY c.id DESC;
-                """,
-                (user_id,)
+                "SELECT * FROM search_contests_native(%s, %s, %s, %s, %s);",
+                (user_id, q, status, strategy, timeline)
             )
             rows = await cur.fetchall()
             contests = []
             for row in rows:
-                (c_id, title, ranking, start, freeze, end, status, judging_desc, inv_code, role,
+                (c_id, title, ranking, start, freeze, end, status_val, judging_desc, inv_code, role,
                  max_p, allow_late, show_pc, show_lb, show_ml, show_tl, show_st, show_sc) = row
                 has_code = inv_code is not None and inv_code != ""
                 is_admin = role in ("HOST", "MODERATOR")
@@ -275,7 +272,7 @@ async def get_contests(current_user: Optional[Dict[str, Any]] = Depends(get_opti
                     "start_time": start,
                     "freeze_time": freeze,
                     "end_time": end,
-                    "status": status,
+                    "status": status_val,
                     "judging_description": judging_desc,
                     "requires_invitation_code": has_code,
                     "invitation_code": inv_code if is_admin else None,

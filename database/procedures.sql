@@ -1407,3 +1407,57 @@ BEGIN
     LIMIT 50;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- Function to Search & Filter Contests Natively
+-- ============================================================
+CREATE OR REPLACE FUNCTION search_contests_native(
+    p_viewer_id INT,
+    p_query VARCHAR DEFAULT NULL,
+    p_status VARCHAR DEFAULT NULL,
+    p_strategy VARCHAR DEFAULT NULL,
+    p_timeline VARCHAR DEFAULT NULL
+)
+RETURNS TABLE (
+    id INT,
+    title VARCHAR,
+    ranking_strategy VARCHAR,
+    start_time TIMESTAMP WITH TIME ZONE,
+    freeze_time TIMESTAMP WITH TIME ZONE,
+    end_time TIMESTAMP WITH TIME ZONE,
+    status VARCHAR,
+    judging_description TEXT,
+    invitation_code VARCHAR,
+    user_role VARCHAR,
+    max_participants INT,
+    allow_late_enrollment BOOLEAN,
+    show_participant_count BOOLEAN,
+    show_leaderboard BOOLEAN,
+    show_member_list BOOLEAN,
+    show_task_list BOOLEAN,
+    show_statistics BOOLEAN,
+    show_submission_count BOOLEAN
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT c.id, c.title, c.ranking_strategy, c.start_time, c.freeze_time, c.end_time,
+           c.status, c.judging_description, c.invitation_code, e.role::VARCHAR AS user_role,
+           c.max_participants, c.allow_late_enrollment,
+           cv.show_participant_count, cv.show_leaderboard, cv.show_member_list,
+           cv.show_task_list, cv.show_statistics, cv.show_submission_count
+    FROM contests c
+    LEFT JOIN enrollments e ON c.id = e.contest_id AND e.user_id = p_viewer_id
+    LEFT JOIN contest_visibility cv ON c.id = cv.contest_id
+    WHERE 
+        (p_query IS NULL OR p_query = '' OR c.title ILIKE '%' || p_query || '%')
+        AND (p_status IS NULL OR p_status = '' OR c.status = p_status)
+        AND (p_strategy IS NULL OR p_strategy = '' OR c.ranking_strategy = p_strategy)
+        AND (
+            p_timeline IS NULL OR p_timeline = '' 
+            OR (p_timeline = 'UPCOMING' AND c.start_time > CURRENT_TIMESTAMP)
+            OR (p_timeline = 'ONGOING' AND c.start_time <= CURRENT_TIMESTAMP AND c.end_time >= CURRENT_TIMESTAMP)
+            OR (p_timeline = 'COMPLETED' AND c.end_time < CURRENT_TIMESTAMP)
+        )
+    ORDER BY c.id DESC;
+END;
+$$ LANGUAGE plpgsql;
