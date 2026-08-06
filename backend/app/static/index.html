@@ -543,6 +543,27 @@
                 <!-- Contests List Card -->
                 <div class="card">
                     <h2>Contests List <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 11px;" onclick="loadContests()">Reload</button></h2>
+                    
+                    <!-- Search & Filter Controls -->
+                    <div style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px;">
+                        <input type="text" id="contest-search-input" placeholder="Search contests..." oninput="debounceSearchContests(event)">
+                        <div style="display: flex; gap: 8px;">
+                            <select id="contest-filter-timeline" onchange="loadContests()" style="flex: 1; padding: 6px 10px; font-size: 12.5px;">
+                                <option value="">All Timelines</option>
+                                <option value="UPCOMING">Upcoming</option>
+                                <option value="ONGOING">Ongoing</option>
+                                <option value="COMPLETED">Completed</option>
+                            </select>
+                            <select id="contest-filter-strategy" onchange="loadContests()" style="flex: 1; padding: 6px 10px; font-size: 12.5px;">
+                                <option value="">All Strategies</option>
+                                <option value="SUM">SUM</option>
+                                <option value="MAX">MAX</option>
+                                <option value="ICPC">ICPC</option>
+                                <option value="Custom">Custom</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <div class="item-list" id="contests-list">
                         <!-- Loaded dynamically -->
                     </div>
@@ -919,8 +940,21 @@
         // Fetch all contests
         async function loadContests() {
             try {
+                const searchInput = document.getElementById('contest-search-input');
+                const timelineSelect = document.getElementById('contest-filter-timeline');
+                const strategySelect = document.getElementById('contest-filter-strategy');
+                
+                const q = searchInput ? searchInput.value.trim() : '';
+                const timeline = timelineSelect ? timelineSelect.value : '';
+                const strategy = strategySelect ? strategySelect.value : '';
+
+                const params = new URLSearchParams();
+                if (q) params.append('q', q);
+                if (timeline) params.append('timeline', timeline);
+                if (strategy) params.append('strategy', strategy);
+
                 const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
-                const response = await fetch('/contests', { headers });
+                const response = await fetch(`/contests?${params.toString()}`, { headers });
                 const contests = await response.json();
                 
                 const list = document.getElementById('contests-list');
@@ -1784,6 +1818,18 @@
             const minutes = String(currentDbTime.getUTCMinutes()).padStart(2, '0');
             const seconds = String(currentDbTime.getUTCSeconds()).padStart(2, '0');
             document.getElementById('global-clock').querySelector('span:last-child').innerText = `UTC Time: ${hours}:${minutes}:${seconds}`;
+        }
+
+        // ============================================================
+        // Contest Search Logic
+        // ============================================================
+        let contestSearchDebounceTimer = null;
+
+        function debounceSearchContests(event) {
+            clearTimeout(contestSearchDebounceTimer);
+            contestSearchDebounceTimer = setTimeout(() => {
+                loadContests();
+            }, 300);
         }
 
         // ============================================================

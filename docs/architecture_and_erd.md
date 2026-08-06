@@ -195,10 +195,11 @@ erDiagram
 
 ---
 
-## 3. PL/pgSQL Function Catalogue (v0.6.0)
+## 3. PL/pgSQL Function Catalogue (v0.7.0)
 
 | Function | Purpose |
 |---|---|
+| `search_contests_native(...)` | Case-insensitive substring search and filter constraints for contests |
 | `search_users_native(p_query)` | Case-insensitive substring search for users (trigram optimized) |
 | `claim_submission(worker_id)` | FOR UPDATE SKIP LOCKED queue claim |
 | `get_leaderboard(contest_id, as_admin)` | Time-aware dynamic leaderboard with freeze logic |

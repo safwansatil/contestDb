@@ -6,6 +6,15 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.7.0] - 2026-08-06 (Contest Search & Filtering System)
+### Added
+* **Trigram Index for Contests** — Added `idx_contests_title_trgm` GIN index on `contests(title)` in [init.sql](database/init.sql) using `pg_trgm` to optimize substring search speed.
+* **Database-Native Contest Search Function** — Created `search_contests_native(...)` PL/pgSQL function in [procedures.sql](database/procedures.sql) that returns filtered contest rows based on search queries, statuses, strategies, and timelines, resolved with visitor enrollment roles.
+* **Advanced Query Parameters** — Updated the `GET /contests` endpoint in [main.py](backend/app/main.py) to support query-filtering parameters: `q`, `status`, `strategy`, and `timeline`.
+* **Sidebar Filter GUI Controls** — Integrated an input text search, timeline dropdown, and ranking strategy dropdown inside the Contests List card in [index.html](backend/app/static/index.html) to filter dynamically with debounced key entry.
+
+---
+
 ## [0.6.0] - 2026-08-06 (User Search & Database-Synchronized UTC Clock)
 ### Added
 * **Trigram Index for User Search** — Added `idx_users_username_trgm` index on `users(username)` in [init.sql](database/init.sql) using `pg_trgm` to optimize case-insensitive substring searches.
