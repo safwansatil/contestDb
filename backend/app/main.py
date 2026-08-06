@@ -609,6 +609,28 @@ async def get_contest_members(contest_id: int, current_user: Dict[str, Any] = De
             rows = await cur.fetchall()
             return [{"user_id": r[0], "username": r[1], "role": r[2]} for r in rows]
 
+@app.get("/time")
+async def get_server_time():
+    """
+    Fetch the current database server timestamp to synchronize the global UTC clock.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT CURRENT_TIMESTAMP;")
+            row = await cur.fetchone()
+            return {"server_time": row[0]}
+
+@app.get("/users/search")
+async def search_users(q: str = Query("", description="Query prefix/substring to search users")):
+    """
+    Search users natively in the database by username.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT id, username, created_at FROM search_users_native(%s);", (q.strip(),))
+            rows = await cur.fetchall()
+            return [{"id": r[0], "username": r[1], "created_at": r[2]} for r in rows]
+
 @app.get("/users")
 async def list_users(current_user: Dict[str, Any] = Depends(get_current_user)):
     """
@@ -761,7 +783,7 @@ async def get_contest_leaderboard(
 
 # User Profile & Activity Statistics Endpoints
 @app.get("/users/{user_id}/profile")
-async def get_user_profile(user_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_user_profile(user_id: int, current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)):
     """
     Fetch user stats and activity graph data.
     """
@@ -811,7 +833,7 @@ async def get_user_profile(user_id: int, current_user: Dict[str, Any] = Depends(
             }
 
 @app.get("/users/{user_id}/history")
-async def get_user_history(user_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_user_history(user_id: int, current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)):
     """
     Fetch user contest history and recent submission history.
     """

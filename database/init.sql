@@ -163,3 +163,6 @@ CREATE INDEX IF NOT EXISTS idx_submissions_contest_time ON submissions(contest_i
 CREATE INDEX IF NOT EXISTS idx_tasks_order             ON tasks(contest_id, task_order ASC);
 CREATE INDEX IF NOT EXISTS idx_kick_log_contest        ON kick_log(contest_id, kicked_user_id);
 CREATE INDEX IF NOT EXISTS idx_announcements_contest   ON contest_announcements(contest_id, posted_at DESC);
+
+-- Trigram index for user search (v0.6.0)
+CREATE INDEX IF NOT EXISTS idx_users_username_trgm     ON users USING gin (username gin_trgm_ops);
