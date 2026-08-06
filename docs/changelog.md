@@ -6,6 +6,23 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.7.1] - 2026-08-06 (Security Hardening: Leaderboard Freeze & Submission Timing)
+### Fixed
+* **[#15] Privilege Escalation via Type Coercion in `get_user_contest_history`** — The `get_user_contest_history` PL/pgSQL function in [procedures.sql](database/procedures.sql) called `get_leaderboard(ec.contest_id, TRUE)` with a literal boolean `TRUE` as the viewer ID. PostgreSQL silently casts `TRUE` to integer `1`, making every call to `/users/{id}/history` treat user ID 1 (sayma) as the viewer — thereby granting admin-level (unfreeze-bypassing) leaderboard access to every user's contest history. Fixed by changing `TRUE` to `NULL`, which instructs `get_leaderboard` to use the public/frozen visibility path for all history lookups. This is correct: contest history always shows final public standings.
+* **[#15] Confirmed: `GET /contests/{id}/leaderboard` is already server-authoritative** — No client-controllable `as_admin` parameter exists on this endpoint. The `view_mode` ("admin" or "public") is determined entirely by the server: the JWT is decoded to extract `user_id`, which is passed to the database function `get_leaderboard`, which queries the `enrollments` table to confirm HOST/MODERATOR status. The client cannot influence this decision.
+* **[#29] Confirmed: Submission timing constraints already enforced** — The `POST /submissions` endpoint in [main.py](backend/app/main.py) checks (1) `status = 'ACTIVE'`, (2) `db_now >= start_time`, and (3) `db_now <= end_time` using the database clock (`CURRENT_TIMESTAMP`), rejecting submissions outside the valid window with HTTP 400.
+
+### Tests
+* **Extended `database/test_leaderboard_timing.py`** — Replaced the minimal existing test with a comprehensive 6-test regression suite covering:
+  * HOST receives `view_mode: "admin"`, participant receives `view_mode: "public"`.
+  * A participant token cannot self-elevate to admin view (privilege is DB-resolved).
+  * `/users/{id}/history` endpoint remains functional after the `TRUE→NULL` fix.
+  * Submission to a not-yet-running contest returns HTTP 400/403.
+  * Submission to an active, running contest is accepted.
+  * Leaderboard response contains all required fields (`user_id`, `username`, `total_score`, `rank`).
+
+---
+
 ## [0.7.0] - 2026-08-06 (Contest Search & Filtering System)
 ### Added
 * **Trigram Index for Contests** — Added `idx_contests_title_trgm` GIN index on `contests(title)` in [init.sql](database/init.sql) using `pg_trgm` to optimize substring search speed.

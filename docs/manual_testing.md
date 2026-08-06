@@ -380,3 +380,106 @@ curl http://127.0.0.1:8000/contests?strategy=ICPC
 *Expected:* List of contests with the ICPC ranking strategy.
 
 
+---
+
+## N. Security Regression Tests: Freeze Bypass & Submission Timing (Issues #15 & #29)
+
+> Run `python database/test_leaderboard_timing.py` with the server and worker running.
+
+### Issue #15 — Leaderboard freeze is enforced server-side
+
+The `GET /contests/{id}/leaderboard` endpoint resolves privilege entirely from
+the JWT and the `enrollments` table in PostgreSQL. There is no client-controlled
+`as_admin` parameter — the server determines the view mode.
+
+#### N.1 Host sees live (admin) standings
+```bash
+# Login as sayma (HOST of Contest 1)
+curl -X POST http://127.0.0.1:8000/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"username": "sayma", "password": "password123"}'
+# Use the returned token:
+curl http://127.0.0.1:8000/contests/1/leaderboard \
+     -H "Authorization: Bearer <sayma_token>"
+```
+*Expected:* `"view_mode": "admin"` — sayma is enrolled as HOST, so the DB
+function grants live visibility.
+
+#### N.2 Participant sees frozen standings
+```bash
+# Login as tabib (PARTICIPANT in Contest 1)
+curl -X POST http://127.0.0.1:8000/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"username": "tabib", "password": "password123"}'
+# Use the returned token:
+curl http://127.0.0.1:8000/contests/1/leaderboard \
+     -H "Authorization: Bearer <tabib_token>"
+```
+*Expected:* `"view_mode": "public"` — tabib is a PARTICIPANT, so standings are
+capped at `freeze_time`. No client parameter can override this.
+
+#### N.3 Unauthenticated caller sees frozen standings
+```bash
+curl http://127.0.0.1:8000/contests/1/leaderboard
+```
+*Expected:* `"view_mode": "public"` — no JWT supplied, `p_viewer_id = NULL`,
+freeze applies.
+
+#### N.4 Verify TRUE→NULL fix in contest history
+Before v0.7.1, `GET /users/{id}/history` silently granted admin-level leaderboard
+access for all users (PostgreSQL was casting `TRUE` → integer `1`, making the DB
+think user ID 1 was always the viewer).
+```bash
+# Fetch satil's history (ID 3 — not an admin anywhere)
+curl http://127.0.0.1:8000/users/3/history \
+     -H "Authorization: Bearer <satil_token>"
+```
+*Expected:* HTTP 200 with well-formed `contest_history` and `submissions_history`
+arrays. The leaderboard ranking inside `contest_history` now uses frozen (public)
+standings for all users — no one receives a free admin-level view.
+
+---
+
+### Issue #29 — Submission timing constraints
+
+The `POST /submissions` endpoint performs three sequential checks using the
+**database clock** (`CURRENT_TIMESTAMP`):
+1. Contest `status` must be `ACTIVE`.
+2. `CURRENT_TIMESTAMP >= start_time` — contest must have started.
+3. `CURRENT_TIMESTAMP <= end_time` — contest must not have ended.
+
+#### N.5 Submission rejected when contest not yet started / not active
+```bash
+# Attempt a submission to Contest 2 (seeded as PENDING_APPROVAL or future)
+curl -X POST http://127.0.0.1:8000/submissions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <any_token>" \
+     -d '{"contest_id": 2, "submission_data": {"run_time_seconds": 10.0, "restarts": 0}}'
+```
+*Expected:* HTTP 400 — `"Submissions are only allowed for ACTIVE contests"` or
+`"Submissions are not allowed yet. The contest has not started."` depending on
+the contest's `status` and `start_time`.
+
+#### N.6 Submission accepted for a running contest
+```bash
+curl -X POST http://127.0.0.1:8000/submissions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <tabib_token>" \
+     -d '{"contest_id": 1, "task_id": 1, "submission_data": {"run_time_seconds": 55.0, "restarts": 2}}'
+```
+*Expected:* HTTP 201 — `"Submission successfully placed in queue"` with a
+`submission_id` returned (assuming Contest 1 is seeded as ACTIVE and currently
+within its `start_time`–`end_time` window).
+
+---
+
+### Running the Automated Regression Suite
+
+```bash
+cd <project_root>
+python database/test_leaderboard_timing.py
+```
+
+The suite runs 6 tests and prints `[PASS]` / `[FAIL]` for each. Exit code is
+`0` on full pass, `1` on any failure. All 6 tests must pass before closing
+Issues #15 and #29.
