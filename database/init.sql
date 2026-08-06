@@ -110,6 +110,21 @@ CREATE TABLE IF NOT EXISTS submissions (
 
 -- Fallbacks if table already existed
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS task_id INT REFERENCES tasks(id) ON DELETE CASCADE;
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS attempt_count INT DEFAULT 0 NOT NULL;
+
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS last_error TEXT;
+
+ALTER TABLE submissions
+    DROP CONSTRAINT IF EXISTS chk_submission_attempt_count;
+
+ALTER TABLE submissions
+    ADD CONSTRAINT chk_submission_attempt_count
+    CHECK (attempt_count >= 0);
 
 -- 5. Contest Visibility Table
 --    Per-contest, host-configurable flags that control which fields are exposed to public viewers.

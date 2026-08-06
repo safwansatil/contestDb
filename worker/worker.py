@@ -12,6 +12,8 @@ load_dotenv(BASE_DIR / ".env")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 WORKER_ID = os.getenv("WORKER_ID", "worker-default")
+LEASE_SECONDS = int(os.getenv("WORKER_LEASE_SECONDS", "60"))
+MAX_ATTEMPTS = int(os.getenv("WORKER_MAX_ATTEMPTS", "3"))
 
 # Configure logging
 logging.basicConfig(
@@ -75,7 +77,10 @@ def main():
                 
                 with conn.cursor() as cur:
                     # Poll queue by calling the claim_submission stored procedure
-                    cur.execute("SELECT * FROM claim_submission(%s);", (WORKER_ID,))
+                    cur.execute(
+                        "SELECT * FROM claim_submission(%s, %s, %s);",
+                        (WORKER_ID, LEASE_SECONDS, MAX_ATTEMPTS)
+                    )
                     row = cur.fetchone()
                     
                     if row:
@@ -93,18 +98,45 @@ def main():
                                 SET status = 'COMPLETED',
                                     score = %s,
                                     verdict = %s,
-                                    judged_at = CURRENT_TIMESTAMP
-                                WHERE id = %s;
+                                    judged_at = CURRENT_TIMESTAMP,
+                                    lease_expires_at = NULL,
+                                    last_error = NULL
+                                WHERE id = %s
+                                  AND status = 'JUDGING'
+                                  AND judged_by = %s;
+                                  AND lease_expires_at > CURRENT_TIMESTAMP;
                                 """,
-                                (score, verdict, sub_id)
+                                (score, verdict, sub_id, WORKER_ID),
                             )
+
                             logger.info(f"Successfully judged submission #{sub_id}. Result: Score={score}, Verdict={verdict}")
                         
                         except Exception as eval_err:
-                            logger.error(f"Error evaluating submission #{sub_id}: {eval_err}")
+                            logger.error(
+                                f"Error evaluating submission #{sub_id}: {eval_err}"
+                            )
+
                             cur.execute(
-                                "UPDATE submissions SET status = 'FAILED' WHERE id = %s;",
-                                (sub_id,)
+                                """
+                                UPDATE submissions
+                                SET status = CASE
+                                        WHEN attempt_count >= %s THEN 'FAILED'
+                                        ELSE 'PENDING'
+                                    END,
+                                    judged_by = NULL,
+                                    lease_expires_at = NULL,
+                                    last_error = %s
+                                WHERE id = %s
+                                AND status = 'JUDGING'
+                                AND judged_by = %s;
+                                AND lease_expires_at > CURRENT_TIMESTAMP;
+                                """,
+                                (
+                                    MAX_ATTEMPTS,
+                                    str(eval_err),
+                                    sub_id,
+                                    WORKER_ID,
+                                ),
                             )
                         
                         # Process next item immediately without sleeping
