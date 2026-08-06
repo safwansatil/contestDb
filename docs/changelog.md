@@ -6,6 +6,15 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.8.0] - 2026-08-06 (Participant Dashboard)
+
+### Added
+
+- **[#42] Database-Native Participant Dashboard** — Added `get_participant_dashboard(p_user_id)` to `database/procedures.sql`. It returns summary statistics, ongoing contests, upcoming contests, leaderboard ranks and scores, and the five most recent participant submissions as one JSONB object.
+- **Authenticated Dashboard Endpoint** — Added `GET /dashboards/participant` to `backend/app/main.py`. The endpoint obtains `user_id` exclusively from the authenticated JWT and does not accept a client-selected user ID.
+- **Participant Dashboard Integration Tests** — Added `database/tests/test_participant_dashboard.py` covering authentication, response structure, participant-role filtering, recent-submission ownership, and the five-submission limit.
+- **Documentation** — Updated `docs/manual_testing.md` and `docs/architecture_and_erd.md` with the endpoint verification procedure and database-native request flow.
+
 ## [0.7.1] - 2026-08-06 (Security Hardening: Leaderboard Freeze & Submission Timing)
 ### Fixed
 * **[#15] Privilege Escalation via Type Coercion in `get_user_contest_history`** — The `get_user_contest_history` PL/pgSQL function in [procedures.sql](database/procedures.sql) called `get_leaderboard(ec.contest_id, TRUE)` with a literal boolean `TRUE` as the viewer ID. PostgreSQL silently casts `TRUE` to integer `1`, making every call to `/users/{id}/history` treat user ID 1 (sayma) as the viewer — thereby granting admin-level (unfreeze-bypassing) leaderboard access to every user's contest history. Fixed by changing `TRUE` to `NULL`, which instructs `get_leaderboard` to use the public/frozen visibility path for all history lookups. This is correct: contest history always shows final public standings.

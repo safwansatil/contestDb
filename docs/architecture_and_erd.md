@@ -195,6 +195,17 @@ erDiagram
 
 ---
 
+## Participant Dashboard Workflow
+
+The participant dashboard follows the database-native thin-tier architecture:
+
+```text
+Authenticated client
+    → GET /dashboards/participant
+    → FastAPI validates JWT and extracts user_id
+    → get_participant_dashboard(user_id)
+    → PostgreSQL calculates and returns one JSONB dashboard object
+
 ## 3. PL/pgSQL Function Catalogue (v0.7.0)
 
 | Function | Purpose |
@@ -230,3 +241,4 @@ erDiagram
 | `get_contest_statistics(contest_id, as_admin)` | Contest-wide analytics with task stats |
 | `get_contest_submission_timeline(contest_id, as_admin)` | date_bin bucketed timeline |
 | `get_participant_score_progression(contest_id, user_id)` | Cumulative score timeline |
+| get_participant_dashboard(p_user_id) | Returns the authenticated participant's summary, ongoing contests, upcoming contests, ranks, scores, and five most recent submissions as JSONB |

@@ -483,3 +483,80 @@ python database/test_leaderboard_timing.py
 The suite runs 6 tests and prints `[PASS]` / `[FAIL]` for each. Exit code is
 `0` on full pass, `1` on any failure. All 6 tests must pass before closing
 Issues #15 and #29.
+
+---
+
+## O. Participant Dashboard Verification (Issue #42)
+
+The participant dashboard is an authenticated endpoint. The user identity is
+obtained from the JWT and is never accepted as a query parameter or request-body
+field.
+
+### O.1 Log in as a seeded participant
+
+```bash
+curl -X POST http://127.0.0.1:8000/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"username": "satil", "password": "password123"}'
+```
+
+Copy the returned `access_token`.
+
+### O.2 Fetch the participant dashboard
+
+```bash
+curl http://127.0.0.1:8000/dashboards/participant \
+     -H "Authorization: Bearer <satil_token>"
+```
+
+Expected response structure:
+
+```json
+{
+  "summary": {
+    "active_contests": 1,
+    "completed_contests": 0,
+    "total_submissions": 3,
+    "tasks_completed": 0
+  },
+  "ongoing_contests": [],
+  "upcoming_contests": [],
+  "recent_submissions": []
+}
+```
+
+The exact values depend on the current database contents and contest times.
+
+### O.3 Verify authentication enforcement
+
+```bash
+curl http://127.0.0.1:8000/dashboards/participant
+```
+
+Expected result:
+
+```text
+HTTP 401 Unauthorized
+```
+
+### O.4 Run the automated integration tests
+
+Start FastAPI first:
+
+```bash
+python backend/run_server.py
+```
+
+In a second terminal, from the project root:
+
+```bash
+python database/tests/test_participant_dashboard.py
+```
+
+The suite verifies:
+
+- Authentication is mandatory.
+- The response contains all required dashboard sections.
+- Only contests where the user is a participant are returned.
+- Recent submissions belong to the authenticated user.
+- At most five recent submissions are returned.

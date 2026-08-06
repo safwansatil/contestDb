@@ -1640,3 +1640,186 @@ BEGIN
     ORDER BY c.id DESC;
 END;
 $$ LANGUAGE plpgsql;
+
+
+-- ============================================================
+-- Participant Dashboard
+-- Issue #42
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION get_participant_dashboard(p_user_id INT)
+RETURNS JSONB
+AS $$
+DECLARE
+    v_summary JSONB;
+    v_ongoing_contests JSONB;
+    v_upcoming_contests JSONB;
+    v_recent_submissions JSONB;
+BEGIN
+    -- Four dashboard summary cards
+    SELECT jsonb_build_object(
+        'active_contests',
+        COUNT(*) FILTER (
+            WHERE c.status = 'ACTIVE'
+              AND CURRENT_TIMESTAMP >= c.start_time
+              AND CURRENT_TIMESTAMP < c.end_time
+        )::INT,
+
+        'completed_contests',
+        COUNT(*) FILTER (
+            WHERE c.status = 'COMPLETED'
+               OR CURRENT_TIMESTAMP >= c.end_time
+        )::INT,
+
+        'total_submissions',
+        (
+            SELECT COUNT(*)::INT
+            FROM submissions s
+            JOIN enrollments pe
+              ON pe.contest_id = s.contest_id
+             AND pe.user_id = s.user_id
+            WHERE s.user_id = p_user_id
+              AND pe.role = 'PARTICIPANT'
+        ),
+
+        'tasks_completed',
+        (
+            SELECT COUNT(DISTINCT s.task_id)::INT
+            FROM submissions s
+            JOIN tasks t
+              ON t.id = s.task_id
+            JOIN enrollments pe
+              ON pe.contest_id = s.contest_id
+             AND pe.user_id = s.user_id
+            WHERE s.user_id = p_user_id
+              AND pe.role = 'PARTICIPANT'
+              AND s.status = 'COMPLETED'
+              AND s.score >= t.max_score
+        )
+    )
+    INTO v_summary
+    FROM enrollments e
+    JOIN contests c
+      ON c.id = e.contest_id
+    WHERE e.user_id = p_user_id
+      AND e.role = 'PARTICIPANT';
+
+
+    -- Contests that are currently running
+    SELECT COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'contest_id', c.id,
+                'title', c.title,
+                'start_time', c.start_time,
+                'end_time', c.end_time,
+                'rank', leaderboard.rank,
+                'total_score', COALESCE(leaderboard.total_score, 0)
+            )
+            ORDER BY c.end_time ASC
+        ),
+        '[]'::JSONB
+    )
+    INTO v_ongoing_contests
+    FROM enrollments e
+    JOIN contests c
+      ON c.id = e.contest_id
+    LEFT JOIN LATERAL (
+        SELECT
+            lb.rank,
+            lb.total_score
+        FROM get_leaderboard(c.id, p_user_id) lb
+        WHERE lb.user_id = p_user_id
+    ) leaderboard ON TRUE
+    WHERE e.user_id = p_user_id
+      AND e.role = 'PARTICIPANT'
+      AND c.status = 'ACTIVE'
+      AND CURRENT_TIMESTAMP >= c.start_time
+      AND CURRENT_TIMESTAMP < c.end_time;
+
+
+    -- Approved contests that have not started
+    SELECT COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'contest_id', c.id,
+                'title', c.title,
+                'start_time', c.start_time,
+                'end_time', c.end_time,
+                'registered_at', e.registered_at
+            )
+            ORDER BY c.start_time ASC
+        ),
+        '[]'::JSONB
+    )
+    INTO v_upcoming_contests
+    FROM enrollments e
+    JOIN contests c
+      ON c.id = e.contest_id
+    WHERE e.user_id = p_user_id
+      AND e.role = 'PARTICIPANT'
+      AND c.status = 'ACTIVE'
+      AND CURRENT_TIMESTAMP < c.start_time;
+
+
+    -- Latest five submissions made as a participant
+    SELECT COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'submission_id', recent.submission_id,
+                'contest_id', recent.contest_id,
+                'contest_title', recent.contest_title,
+                'task_id', recent.task_id,
+                'task_title', recent.task_title,
+                'status', recent.submission_status,
+                'score', recent.score,
+                'verdict', recent.verdict,
+                'submitted_at', recent.submitted_at
+            )
+            ORDER BY recent.submitted_at DESC
+        ),
+        '[]'::JSONB
+    )
+    INTO v_recent_submissions
+    FROM (
+        SELECT
+            s.id AS submission_id,
+            s.contest_id,
+            c.title AS contest_title,
+            s.task_id,
+            t.title AS task_title,
+            s.status AS submission_status,
+            s.score,
+            s.verdict,
+            s.submitted_at
+        FROM submissions s
+        JOIN contests c
+          ON c.id = s.contest_id
+        LEFT JOIN tasks t
+          ON t.id = s.task_id
+        JOIN enrollments e
+          ON e.contest_id = s.contest_id
+         AND e.user_id = s.user_id
+        WHERE s.user_id = p_user_id
+          AND e.role = 'PARTICIPANT'
+        ORDER BY s.submitted_at DESC
+        LIMIT 5
+    ) recent;
+
+
+    RETURN jsonb_build_object(
+        'summary', COALESCE(
+            v_summary,
+            jsonb_build_object(
+                'active_contests', 0,
+                'completed_contests', 0,
+                'total_submissions', 0,
+                'tasks_completed', 0
+            )
+        ),
+        'ongoing_contests', v_ongoing_contests,
+        'upcoming_contests', v_upcoming_contests,
+        'recent_submissions', v_recent_submissions
+    );
+END;
+$$ LANGUAGE plpgsql;
