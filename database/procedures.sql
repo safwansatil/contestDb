@@ -44,7 +44,7 @@ $$ LANGUAGE plpgsql;
 --   'MAX': Score is the single MAX score achieved across all submissions.
 --   Scoreboard freeze logic applies: public viewers see standings frozen at freeze_time.
 -- ============================================================
-CREATE OR REPLACE FUNCTION get_leaderboard(p_contest_id INT, p_as_admin BOOLEAN DEFAULT FALSE)
+CREATE OR REPLACE FUNCTION get_leaderboard(p_contest_id INT, p_viewer_id INT DEFAULT NULL)
 RETURNS TABLE (
     user_id INT,
     username VARCHAR,
@@ -58,6 +58,7 @@ DECLARE
     v_strategy VARCHAR(30);
     v_effective_freeze TIMESTAMP WITH TIME ZONE;
     v_has_tasks BOOLEAN;
+    v_is_admin BOOLEAN := FALSE;
 BEGIN
     -- Fetch contest settings
     SELECT start_time, freeze_time, end_time, ranking_strategy
@@ -69,11 +70,29 @@ BEGIN
         RAISE EXCEPTION 'Contest with ID % not found', p_contest_id;
     END IF;
 
-    -- Determine freeze boundary: admins (HOST/MOD) always see the live standings
-    IF p_as_admin OR NOW() >= v_end_time THEN
-        v_effective_freeze := v_end_time;
+    -- Check if the viewer is HOST or MODERATOR
+    IF p_viewer_id IS NOT NULL THEN
+        SELECT EXISTS (
+            SELECT 1 
+            FROM enrollments 
+            WHERE contest_id = p_contest_id 
+              AND user_id = p_viewer_id 
+              AND role IN ('HOST', 'MODERATOR')
+        ) INTO v_is_admin;
+    END IF;
+
+    -- Determine freeze boundary:
+    IF v_is_admin THEN
+        -- Admins see everything up to the current moment, capped at contest end
+        v_effective_freeze := LEAST(NOW(), v_end_time);
     ELSE
-        v_effective_freeze := v_freeze_time;
+        IF NOW() >= v_end_time THEN
+            -- After contest ends, everyone sees the final standings
+            v_effective_freeze := v_end_time;
+        ELSE
+            -- During the contest, regular users see standings up to NOW() capped at freeze_time (defaulting to end_time if null)
+            v_effective_freeze := LEAST(NOW(), COALESCE(v_freeze_time, v_end_time));
+        END IF;
     END IF;
 
     -- Check if contest has tasks
@@ -1121,7 +1140,12 @@ BEGIN
             l.total_score,
             l.rank
         FROM enrolled_contests ec
-        CROSS JOIN LATERAL get_leaderboard(ec.contest_id, TRUE) l
+        -- NOTE: Pass NULL as viewer_id so leaderboard uses public/frozen visibility for all
+        -- history calls. Passing TRUE here was a bug — PostgreSQL casts TRUE to int 1,
+        -- which would accidentally grant admin-level (live) leaderboard access to every
+        -- contest history lookup by making the function think user ID 1 is always the viewer.
+        -- Closes #15 (privilege escalation via type coercion in get_user_contest_history).
+        CROSS JOIN LATERAL get_leaderboard(ec.contest_id, NULL) l
     )
     SELECT
         ec.contest_id,

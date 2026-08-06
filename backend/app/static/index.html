@@ -658,9 +658,10 @@
                 <!-- Leaderboard Card -->
                 <div class="card">
                     <h2>Standings Leaderboard</h2>
-                    <div class="admin-toggle">
-                        <input type="checkbox" id="as-admin-check" onchange="fetchLeaderboard()">
-                        <label for="as-admin-check">View as Admin (Bypass Score Freeze)</label>
+                    <!-- Admin Mode Indicator (Managed dynamically by API response) -->
+                    <div id="admin-standings-indicator" style="display:none; color: var(--primary); font-size:12px; font-weight:600; padding: 6px 10px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px; margin-bottom: 12px; align-items: center; gap: 6px;">
+                        <span style="display: inline-block; width: 6px; height: 6px; background-color: var(--primary); border-radius: 50%; box-shadow: 0 0 6px var(--primary);"></span>
+                        <span>Viewing Live Standings (Admin Mode)</span>
                     </div>
                     <table id="leaderboard-table">
                         <thead>
@@ -1377,16 +1378,22 @@
         // Fetch standings
         async function fetchLeaderboard() {
             if (!selectedContestId) return;
-            const asAdmin = document.getElementById("as-admin-check").checked;
             
             try {
-                const response = await fetch(`/contests/${selectedContestId}/leaderboard?as_admin=${asAdmin}`);
+                const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+                const response = await fetch(`/contests/${selectedContestId}/leaderboard`, { headers });
                 const data = await response.json();
                 
                 if (!response.ok) throw new Error(data.detail || "Failed to fetch standings");
 
                 const tbody = document.getElementById("leaderboard-body");
                 tbody.innerHTML = "";
+
+                // Manage Admin Standings Indicator dynamically
+                const adminIndicator = document.getElementById("admin-standings-indicator");
+                if (adminIndicator) {
+                    adminIndicator.style.display = data.view_mode === 'admin' ? 'flex' : 'none';
+                }
 
                 if (data.leaderboard.length === 0) {
                     tbody.innerHTML = "<tr><td colspan='3' style='text-align:center; color:var(--text-secondary);'>No scores recorded yet</td></tr>";

@@ -65,11 +65,19 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
 
 async def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> Optional[Dict[str, Any]]:
     if not credentials:
+        print("DEBUG get_optional_user: No credentials found")
         return None
     try:
         payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return {"user_id": int(payload.get("sub")), "username": payload.get("username")}
-    except jwt.PyJWTError:
+        user_info = {"user_id": int(payload.get("sub")), "username": payload.get("username")}
+        print(f"DEBUG get_optional_user: Decoded user info: {user_info}")
+        import sys
+        sys.stdout.flush()
+        return user_info
+    except jwt.PyJWTError as e:
+        print(f"DEBUG get_optional_user: JWT error: {e}")
+        import sys
+        sys.stdout.flush()
         return None
 
 # Pydantic Schemas for validation
@@ -665,16 +673,43 @@ async def create_submission(
                     detail=f"User '{current_user['username']}' (ID {user_id}) is not enrolled in contest {payload.contest_id}"
                 )
 
-            # 1a. Verify contest is active
+            # 1a. Verify contest is active and currently running (database-native timing checks)
             await cur.execute(
-                "SELECT status FROM contests WHERE id = %s",
+                """
+                SELECT status, start_time, end_time FROM contests WHERE id = %s
+                """,
                 (payload.contest_id,)
             )
-            contest_status_row = await cur.fetchone()
-            if not contest_status_row or contest_status_row[0] != 'ACTIVE':
+            contest_row = await cur.fetchone()
+            if not contest_row:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Contest not found"
+                )
+            
+            c_status, c_start_time, c_end_time = contest_row
+            
+            if c_status != 'ACTIVE':
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Submissions are only allowed for ACTIVE contests"
+                )
+            
+            # Fetch current database time
+            await cur.execute("SELECT CURRENT_TIMESTAMP;")
+            now_row = await cur.fetchone()
+            db_now = now_row[0]
+            
+            if db_now < c_start_time:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Submissions are not allowed yet. The contest has not started."
+                )
+            
+            if db_now > c_end_time:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Submissions are closed. The contest has ended."
                 )
 
             # 1b. Verify task belongs to contest if task_id is provided
@@ -742,21 +777,33 @@ async def create_submission(
 @app.get("/contests/{contest_id}/leaderboard")
 async def get_contest_leaderboard(
     contest_id: int, 
-    as_admin: bool = Query(False, description="Set to true to view the full unfrozen standings")
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
 ):
     """
-    Fetch the dynamic leaderboard. Honors scoreboard freeze rules if not viewed as admin.
+    Fetch the dynamic leaderboard. Honors scoreboard freeze rules based on the user's role.
     """
+    user_id = current_user["user_id"] if current_user else None
     async with get_db_connection() as conn:
         async with conn.cursor() as cur:
             try:
                 # Query the stored procedure
                 await cur.execute(
                     "SELECT user_id, username, total_score, rank FROM get_leaderboard(%s, %s)",
-                    (contest_id, as_admin)
+                    (contest_id, user_id)
                 )
                 rows = await cur.fetchall()
                 
+                # Check if this user is a Host/Moderator to return view mode info
+                is_admin = False
+                if user_id:
+                    await cur.execute(
+                        "SELECT role FROM enrollments WHERE contest_id = %s AND user_id = %s",
+                        (contest_id, user_id)
+                    )
+                    enrolled = await cur.fetchone()
+                    if enrolled and enrolled[0] in ("HOST", "MODERATOR"):
+                        is_admin = True
+
                 leaderboard = []
                 for row in rows:
                     leaderboard.append({
@@ -767,7 +814,7 @@ async def get_contest_leaderboard(
                     })
                 return {
                     "contest_id": contest_id,
-                    "view_mode": "admin" if as_admin else "public",
+                    "view_mode": "admin" if is_admin else "public",
                     "leaderboard": leaderboard
                 }
             except Exception as e:
