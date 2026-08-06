@@ -49,3 +49,11 @@ venv.bak/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Node / frontend
+node_modules/
+# The Python 'lib/' and 'dist/' rules above also match the React app's source
+# (frontend/src/lib) and build output. Re-include the app source explicitly.
+!frontend/src/lib/
+!frontend/src/lib/**
+frontend/dist/

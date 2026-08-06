@@ -14,6 +14,7 @@ if sys.platform == 'win32':
 
 from fastapi import FastAPI, HTTPException, Query, status, Depends
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, field_validator
 from .database import pool, get_db_connection
@@ -23,6 +24,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("backend")
 
 app = FastAPI(title="ContestDB API Gateway", description="Thin-tier API gateway for ContestDB with Authentication")
+
+# CORS — allow the local frontend dev server (and any localhost origin) to call the API.
+# Regex covers http://localhost:* and http://127.0.0.1:* on any port used by Vite.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Auth Configuration
 JWT_SECRET = os.getenv("JWT_SECRET", "contestdb_jwt_secret_key_change_me_in_production")

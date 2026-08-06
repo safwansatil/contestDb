@@ -71,13 +71,16 @@ BEGIN
     END IF;
 
     -- Check if the viewer is HOST or MODERATOR
+    -- NOTE: columns are qualified with the table alias because this function's
+    -- RETURNS TABLE declares an output column named `user_id`, which would otherwise
+    -- make the bare `user_id` reference ambiguous and raise an error at runtime.
     IF p_viewer_id IS NOT NULL THEN
         SELECT EXISTS (
-            SELECT 1 
-            FROM enrollments 
-            WHERE contest_id = p_contest_id 
-              AND user_id = p_viewer_id 
-              AND role IN ('HOST', 'MODERATOR')
+            SELECT 1
+            FROM enrollments e
+            WHERE e.contest_id = p_contest_id
+              AND e.user_id = p_viewer_id
+              AND e.role IN ('HOST', 'MODERATOR')
         ) INTO v_is_admin;
     END IF;
 
