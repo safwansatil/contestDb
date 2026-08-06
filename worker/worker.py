@@ -10,7 +10,7 @@ import psycopg
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("WORKER_DATABASE_URL")
 WORKER_ID = os.getenv("WORKER_ID", "worker-default")
 LEASE_SECONDS = int(os.getenv("WORKER_LEASE_SECONDS", "60"))
 MAX_ATTEMPTS = int(os.getenv("WORKER_MAX_ATTEMPTS", "3"))
@@ -24,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger("worker")
 
 if not DATABASE_URL:
-    logger.error("DATABASE_URL is not set!")
+    logger.error("WORKER_DATABASE_URL is not set!")
     exit(1)
 
 def evaluate_submission(payload: dict) -> tuple[float, str]:
