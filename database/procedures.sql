@@ -4,7 +4,12 @@
 -- ============================================================
 -- 1. Function to Claim Submissions from Queue (FOR UPDATE SKIP LOCKED)
 -- ============================================================
-CREATE OR REPLACE FUNCTION claim_submission(p_worker_id VARCHAR)
+DROP FUNCTION IF EXISTS claim_submission(VARCHAR);
+CREATE OR REPLACE FUNCTION claim_submission(
+    p_worker_id VARCHAR,
+    p_lease_seconds INT DEFAULT 60,
+    p_max_attempts INT DEFAULT 3
+)
 RETURNS TABLE (
     submission_id INT,
     contest_id INT,
@@ -14,25 +19,61 @@ RETURNS TABLE (
 DECLARE
     v_sub_id INT;
 BEGIN
-    -- Select the oldest pending submission, lock the row, skip any already locked
-    SELECT id INTO v_sub_id
-    FROM submissions
-    WHERE status = 'PENDING'
-    ORDER BY submitted_at ASC
+    IF p_lease_seconds <= 0 THEN
+        RAISE EXCEPTION 'Lease duration must be greater than zero';
+    END IF;
+
+    IF p_max_attempts <= 0 THEN
+        RAISE EXCEPTION 'Maximum attempts must be greater than zero';
+    END IF;
+
+    -- Permanently fail expired jobs that already reached the retry limit.
+    UPDATE submissions
+    SET status = 'FAILED',
+        judged_by = NULL,
+        lease_expires_at = NULL,
+        last_error = COALESCE(
+            last_error,
+            'Worker lease expired after maximum retry attempts'
+        )
+    WHERE status = 'JUDGING'
+      AND lease_expires_at <= CURRENT_TIMESTAMP
+      AND attempt_count >= p_max_attempts;
+
+    -- Recover expired jobs that still have retries remaining.
+    UPDATE submissions
+    SET status = 'PENDING',
+        judged_by = NULL,
+        lease_expires_at = NULL,
+        last_error = 'Previous worker lease expired'
+    WHERE status = 'JUDGING'
+      AND lease_expires_at <= CURRENT_TIMESTAMP
+      AND attempt_count < p_max_attempts;
+
+    -- Lock and claim the oldest eligible pending submission.
+    SELECT s.id
+    INTO v_sub_id
+    FROM submissions s
+    WHERE s.status = 'PENDING'
+      AND s.attempt_count < p_max_attempts
+    ORDER BY s.submitted_at ASC
     FOR UPDATE SKIP LOCKED
     LIMIT 1;
 
-    -- If a submission was successfully locked, mark it as JUDGING and return its details
     IF v_sub_id IS NOT NULL THEN
         UPDATE submissions
         SET status = 'JUDGING',
-            judged_by = p_worker_id
+            judged_by = p_worker_id,
+            attempt_count = attempt_count + 1,
+            lease_expires_at =
+                CURRENT_TIMESTAMP + make_interval(secs => p_lease_seconds),
+            last_error = NULL
         WHERE id = v_sub_id;
 
         RETURN QUERY
-        SELECT id, s.contest_id, s.user_id, s.submission_data
+        SELECT s.id, s.contest_id, s.user_id, s.submission_data
         FROM submissions s
-        WHERE id = v_sub_id;
+        WHERE s.id = v_sub_id;
     END IF;
 END;
 $$ LANGUAGE plpgsql;
