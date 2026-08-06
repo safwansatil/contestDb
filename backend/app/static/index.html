@@ -493,6 +493,11 @@
                 <h1>ContestDB Gateway</h1>
                 <div class="brand-sub">PostgreSQL-Native Contest Processing System</div>
             </div>
+            <!-- DB-synchronized Live UTC Clock -->
+            <div id="global-clock" style="font-family: 'Fira Code', monospace; font-size: 13.5px; color: var(--primary); background: rgba(56, 189, 248, 0.08); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.2); font-weight: 500; display: flex; align-items: center; gap: 6px;">
+                <span style="display: inline-block; width: 8px; height: 8px; background-color: var(--accent-green); border-radius: 50%; box-shadow: 0 0 8px var(--accent-green);"></span>
+                <span>UTC Time: Syncing...</span>
+            </div>
             <div class="user-status" id="user-status-container">
                 <span class="badge-info" style="background-color: rgba(239, 68, 68, 0.1); color: var(--accent-red); border: 1px solid rgba(239, 68, 68, 0.2);">Guest Mode</span>
             </div>
@@ -522,6 +527,17 @@
                         </div>
                         <button type="submit" class="btn btn-primary" id="auth-btn">Sign In</button>
                     </form>
+                </div>
+
+                <!-- User Search Card -->
+                <div class="card" id="user-search-card">
+                    <h2>Search Users</h2>
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <input type="text" id="user-search-input" placeholder="Search by username..." oninput="debounceSearchUsers(event)">
+                    </div>
+                    <div id="user-search-results" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+                        <div style="text-align: center; color: var(--text-secondary); padding: 8px;">Type a username to search</div>
+                    </div>
                 </div>
 
                 <!-- Contests List Card -->
@@ -1613,16 +1629,15 @@
             document.getElementById('profile-history-contests-body').innerHTML = '<tr><td colspan="4" style="text-align:center;">Loading...</td></tr>';
             document.getElementById('profile-history-submissions-body').innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading...</td></tr>';
 
-            if (!authToken) {
-                log('Error: You must be logged in to view profiles.', 'error');
-                closeUserProfileModal();
-                return;
+            const reqHeaders = {};
+            if (authToken) {
+                reqHeaders['Authorization'] = `Bearer ${authToken}`;
             }
 
             try {
                 // 1. Fetch user profile and stats
                 const profileRes = await fetch(`/users/${userId}/profile`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
+                    headers: reqHeaders
                 });
                 const profile = await profileRes.json();
                 if (!profileRes.ok) throw new Error(profile.detail || "Failed to load user profile");
@@ -1679,7 +1694,7 @@
 
                 // 2. Fetch user histories
                 const historyRes = await fetch(`/users/${userId}/history`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
+                    headers: reqHeaders
                 });
                 const history = await historyRes.json();
                 if (!historyRes.ok) throw new Error(history.detail || "Failed to load user history");
@@ -1741,9 +1756,90 @@
             }
         }
 
+        // ============================================================
+        // Global Synchronized Clock Logic
+        // ============================================================
+        let dbTimeOffsetMs = 0;
+
+        async function initGlobalClock() {
+            try {
+                const res = await fetch('/time');
+                const data = await res.json();
+                if (res.ok && data.server_time) {
+                    const serverTime = new Date(data.server_time).getTime();
+                    const clientTime = Date.now();
+                    dbTimeOffsetMs = serverTime - clientTime;
+                }
+            } catch (err) {
+                console.error("Failed to sync clock with database time:", err);
+            }
+            
+            updateGlobalClock();
+            setInterval(updateGlobalClock, 1000);
+        }
+
+        function updateGlobalClock() {
+            const currentDbTime = new Date(Date.now() + dbTimeOffsetMs);
+            const hours = String(currentDbTime.getUTCHours()).padStart(2, '0');
+            const minutes = String(currentDbTime.getUTCMinutes()).padStart(2, '0');
+            const seconds = String(currentDbTime.getUTCSeconds()).padStart(2, '0');
+            document.getElementById('global-clock').querySelector('span:last-child').innerText = `UTC Time: ${hours}:${minutes}:${seconds}`;
+        }
+
+        // ============================================================
+        // User Search Logic
+        // ============================================================
+        let userSearchDebounceTimer = null;
+
+        function debounceSearchUsers(event) {
+            clearTimeout(userSearchDebounceTimer);
+            userSearchDebounceTimer = setTimeout(() => {
+                const query = event.target.value.trim();
+                searchUsers(query);
+            }, 300);
+        }
+
+        async function searchUsers(query) {
+            const resultsDiv = document.getElementById('user-search-results');
+            if (!query) {
+                resultsDiv.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 8px;">Type a username to search</div>';
+                return;
+            }
+
+            try {
+                const res = await fetch(`/users/search?q=${encodeURIComponent(query)}`);
+                if (!res.ok) throw new Error("Search failed");
+                const users = await res.json();
+                
+                if (users.length === 0) {
+                    resultsDiv.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 8px;">No users found</div>';
+                    return;
+                }
+
+                resultsDiv.innerHTML = '';
+                users.forEach(user => {
+                    const div = document.createElement('div');
+                    div.className = 'item-card';
+                    div.style.padding = '8px 12px';
+                    div.innerHTML = `
+                        <div class="item-title" style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="color: var(--primary); cursor: pointer; text-decoration: underline; font-weight: 600;" onclick="openUserProfile(${user.id})">
+                                ${user.username}
+                            </span>
+                            <span class="badge badge-role" style="font-size: 8px;">ID ${user.id}</span>
+                        </div>
+                    `;
+                    resultsDiv.appendChild(div);
+                });
+            } catch (err) {
+                resultsDiv.innerHTML = `<div style="text-align: center; color: var(--accent-red); padding: 8px;">Error: ${err.message}</div>`;
+            }
+        }
+
         // Initialize dashboard
         log("Started premium interactive dashboard. Active & connected.");
         verifyToken();
+        initGlobalClock();
     </script>
 </body>
 </html>

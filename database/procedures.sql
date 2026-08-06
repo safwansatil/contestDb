@@ -1388,3 +1388,22 @@ BEGIN
     END IF;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- Function to Search Users Natively
+-- ============================================================
+CREATE OR REPLACE FUNCTION search_users_native(p_query VARCHAR)
+RETURNS TABLE (
+    id INT,
+    username VARCHAR,
+    created_at TIMESTAMP WITH TIME ZONE
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT u.id, u.username, u.created_at
+    FROM users u
+    WHERE u.username ILIKE '%' || p_query || '%'
+    ORDER BY u.username ASC
+    LIMIT 50;
+END;
+$$ LANGUAGE plpgsql;

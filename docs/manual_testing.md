@@ -330,3 +330,33 @@ curl http://127.0.0.1:8000/contests/1/profile \
      -H "Authorization: Bearer <sayma_token>"
 ```
 *Expected:* Same but also includes `invitation_code`, `total_kicked`, and `spots_remaining` since sayma is HOST.
+
+### K. Synchronized Database Time
+Fetch the current database server timestamp:
+```bash
+curl http://127.0.0.1:8000/time
+```
+*Expected:* `{"server_time": "2026-08-06T18:35:00+06:00"}` (with actual database time).
+
+### L. User Search
+Search for a user natively via substring (public):
+```bash
+curl http://127.0.0.1:8000/users/search?q=sayma
+```
+*Expected:* A JSON array containing matching users:
+```json
+[
+  {
+    "id": 1,
+    "username": "sayma",
+    "created_at": "2026-08-06T12:00:00+00:00"
+  }
+]
+```
+
+Try search with a partial query:
+```bash
+curl http://127.0.0.1:8000/users/search?q=sa
+```
+*Expected:* Users with username matching "sa" (e.g. sayma, satil).
+

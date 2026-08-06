@@ -6,6 +6,21 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.6.0] - 2026-08-06 (User Search & Database-Synchronized UTC Clock)
+### Added
+* **Trigram Index for User Search** — Added `idx_users_username_trgm` index on `users(username)` in [init.sql](database/init.sql) using `pg_trgm` to optimize case-insensitive substring searches.
+* **Database-Native User Search Function** — Created `search_users_native(p_query)` PL/pgSQL function in [procedures.sql](database/procedures.sql) that queries database users matching the query substring, ordered alphabetically.
+* **Server Time Synchronizer** — Exposes `/time` endpoint in [main.py](backend/app/main.py) returning database server timestamp (`CURRENT_TIMESTAMP`) for high-precision frontend time synchronization.
+* **Search API Endpoint** — Exposes public `/users/search` endpoint in [main.py](backend/app/main.py) wrapping the native search function.
+* **User Search UI Card** — Added a sidebar card in [index.html](backend/app/static/index.html) allowing visitors to search users by username and click through to view their profiles.
+* **Global Sync UTC Timer** — Displays a live-updating clock in the top-bar header of [index.html](backend/app/static/index.html) that synchronizes with the database time on initialization via calculated time offset.
+
+### Changed
+* Made `/users/{user_id}/profile` and `/users/{user_id}/history` API endpoints login-optional (`get_optional_user`) so guest users can view profiles.
+* Modified the frontend profile modal trigger to dynamically request authorization headers only if the client is logged in, allowing visitors to inspect stats.
+
+---
+
 ## [0.5.1] - 2026-07-31 (Remove Contest Approval from API & GUI)
 ### Removed
 * **`POST /contests/{id}/approve` endpoint** — removed from [main.py](backend/app/main.py) entirely. Contest approval is now a developer-only terminal action. Calling this endpoint will return 404. To approve a contest, connect to the database directly and run `SELECT approve_contest_native(<id>);` or `UPDATE contests SET status = 'ACTIVE' WHERE id = <id>;`.
