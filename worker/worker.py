@@ -10,8 +10,10 @@ import psycopg
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("WORKER_DATABASE_URL")
 WORKER_ID = os.getenv("WORKER_ID", "worker-default")
+LEASE_SECONDS = int(os.getenv("WORKER_LEASE_SECONDS", "60"))
+MAX_ATTEMPTS = int(os.getenv("WORKER_MAX_ATTEMPTS", "3"))
 
 # Configure logging
 logging.basicConfig(
@@ -22,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger("worker")
 
 if not DATABASE_URL:
-    logger.error("DATABASE_URL is not set!")
+    logger.error("WORKER_DATABASE_URL is not set!")
     exit(1)
 
 def evaluate_submission(payload: dict) -> tuple[float, str]:
@@ -32,6 +34,17 @@ def evaluate_submission(payload: dict) -> tuple[float, str]:
     """
     logger.info(f"Evaluating payload: {payload}")
 
+    # Scores and verdicts are trusted outputs produced only by the worker.
+    # Participants must never provide them in submission_data.
+    forbidden_fields = {"score", "verdict"}
+    supplied_forbidden_fields = forbidden_fields.intersection(payload)
+
+    if supplied_forbidden_fields:
+        logger.warning(
+            "Rejected submission containing trusted fields: %s",
+            sorted(supplied_forbidden_fields),
+        )
+        return 0.0, "INVALID_SUBMISSION"
     # Case 1: LFR (Line Follower Robot) run telemetry
     if "run_time_seconds" in payload:
         run_time = float(payload["run_time_seconds"])
@@ -53,13 +66,7 @@ def evaluate_submission(payload: dict) -> tuple[float, str]:
         else:
             return 0.0, "WRONG_ANSWER"
 
-    # Case 3: Direct score injection (e.g. Quiz, Chess match, Manual Jury grading)
-    elif "score" in payload:
-        score = float(payload["score"])
-        verdict = str(payload.get("verdict", "GRADED"))
-        return score, verdict
-
-    # Case 4: Default fallback
+    # Case 3: Default fallback
     else:
         return 50.0, "GENERIC_SUCCESS"
 
@@ -75,7 +82,10 @@ def main():
                 
                 with conn.cursor() as cur:
                     # Poll queue by calling the claim_submission stored procedure
-                    cur.execute("SELECT * FROM claim_submission(%s);", (WORKER_ID,))
+                    cur.execute(
+                        "SELECT * FROM claim_submission(%s, %s, %s);",
+                        (WORKER_ID, LEASE_SECONDS, MAX_ATTEMPTS)
+                    )
                     row = cur.fetchone()
                     
                     if row:
@@ -93,18 +103,45 @@ def main():
                                 SET status = 'COMPLETED',
                                     score = %s,
                                     verdict = %s,
-                                    judged_at = CURRENT_TIMESTAMP
-                                WHERE id = %s;
+                                    judged_at = CURRENT_TIMESTAMP,
+                                    lease_expires_at = NULL,
+                                    last_error = NULL
+                                WHERE id = %s
+                                  AND status = 'JUDGING'
+                                  AND judged_by = %s;
+                                  AND lease_expires_at > CURRENT_TIMESTAMP;
                                 """,
-                                (score, verdict, sub_id)
+                                (score, verdict, sub_id, WORKER_ID),
                             )
+
                             logger.info(f"Successfully judged submission #{sub_id}. Result: Score={score}, Verdict={verdict}")
                         
                         except Exception as eval_err:
-                            logger.error(f"Error evaluating submission #{sub_id}: {eval_err}")
+                            logger.error(
+                                f"Error evaluating submission #{sub_id}: {eval_err}"
+                            )
+
                             cur.execute(
-                                "UPDATE submissions SET status = 'FAILED' WHERE id = %s;",
-                                (sub_id,)
+                                """
+                                UPDATE submissions
+                                SET status = CASE
+                                        WHEN attempt_count >= %s THEN 'FAILED'
+                                        ELSE 'PENDING'
+                                    END,
+                                    judged_by = NULL,
+                                    lease_expires_at = NULL,
+                                    last_error = %s
+                                WHERE id = %s
+                                AND status = 'JUDGING'
+                                AND judged_by = %s;
+                                AND lease_expires_at > CURRENT_TIMESTAMP;
+                                """,
+                                (
+                                    MAX_ATTEMPTS,
+                                    str(eval_err),
+                                    sub_id,
+                                    WORKER_ID,
+                                ),
                             )
                         
                         # Process next item immediately without sleeping

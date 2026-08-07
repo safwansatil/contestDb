@@ -4,7 +4,12 @@
 -- ============================================================
 -- 1. Function to Claim Submissions from Queue (FOR UPDATE SKIP LOCKED)
 -- ============================================================
-CREATE OR REPLACE FUNCTION claim_submission(p_worker_id VARCHAR)
+DROP FUNCTION IF EXISTS claim_submission(VARCHAR);
+CREATE OR REPLACE FUNCTION claim_submission(
+    p_worker_id VARCHAR,
+    p_lease_seconds INT DEFAULT 60,
+    p_max_attempts INT DEFAULT 3
+)
 RETURNS TABLE (
     submission_id INT,
     contest_id INT,
@@ -14,25 +19,61 @@ RETURNS TABLE (
 DECLARE
     v_sub_id INT;
 BEGIN
-    -- Select the oldest pending submission, lock the row, skip any already locked
-    SELECT id INTO v_sub_id
-    FROM submissions
-    WHERE status = 'PENDING'
-    ORDER BY submitted_at ASC
+    IF p_lease_seconds <= 0 THEN
+        RAISE EXCEPTION 'Lease duration must be greater than zero';
+    END IF;
+
+    IF p_max_attempts <= 0 THEN
+        RAISE EXCEPTION 'Maximum attempts must be greater than zero';
+    END IF;
+
+    -- Permanently fail expired jobs that already reached the retry limit.
+    UPDATE submissions
+    SET status = 'FAILED',
+        judged_by = NULL,
+        lease_expires_at = NULL,
+        last_error = COALESCE(
+            last_error,
+            'Worker lease expired after maximum retry attempts'
+        )
+    WHERE status = 'JUDGING'
+      AND lease_expires_at <= CURRENT_TIMESTAMP
+      AND attempt_count >= p_max_attempts;
+
+    -- Recover expired jobs that still have retries remaining.
+    UPDATE submissions
+    SET status = 'PENDING',
+        judged_by = NULL,
+        lease_expires_at = NULL,
+        last_error = 'Previous worker lease expired'
+    WHERE status = 'JUDGING'
+      AND lease_expires_at <= CURRENT_TIMESTAMP
+      AND attempt_count < p_max_attempts;
+
+    -- Lock and claim the oldest eligible pending submission.
+    SELECT s.id
+    INTO v_sub_id
+    FROM submissions s
+    WHERE s.status = 'PENDING'
+      AND s.attempt_count < p_max_attempts
+    ORDER BY s.submitted_at ASC
     FOR UPDATE SKIP LOCKED
     LIMIT 1;
 
-    -- If a submission was successfully locked, mark it as JUDGING and return its details
     IF v_sub_id IS NOT NULL THEN
         UPDATE submissions
         SET status = 'JUDGING',
-            judged_by = p_worker_id
+            judged_by = p_worker_id,
+            attempt_count = attempt_count + 1,
+            lease_expires_at =
+                CURRENT_TIMESTAMP + make_interval(secs => p_lease_seconds),
+            last_error = NULL
         WHERE id = v_sub_id;
 
         RETURN QUERY
-        SELECT id, s.contest_id, s.user_id, s.submission_data
+        SELECT s.id, s.contest_id, s.user_id, s.submission_data
         FROM submissions s
-        WHERE id = v_sub_id;
+        WHERE s.id = v_sub_id;
     END IF;
 END;
 $$ LANGUAGE plpgsql;
@@ -469,6 +510,139 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Normalize and replace all tags assigned to a task
+CREATE OR REPLACE FUNCTION set_task_tags_native(
+    p_task_id INT,
+    p_user_id INT,
+    p_tags TEXT[]
+) RETURNS VOID AS $$
+DECLARE
+    v_contest_id INT;
+    v_role VARCHAR;
+    v_tag TEXT;
+    v_normalized_tag TEXT;
+    v_tag_id INT;
+BEGIN
+    SELECT contest_id INTO v_contest_id
+    FROM tasks
+    WHERE id = p_task_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Task not found';
+    END IF;
+
+    SELECT role INTO v_role
+    FROM enrollments
+    WHERE contest_id = v_contest_id
+      AND user_id = p_user_id;
+
+    IF v_role IS NULL OR v_role NOT IN ('HOST', 'MODERATOR') THEN
+        RAISE EXCEPTION 'Unauthorized: Only Host or Moderator can update task tags';
+    END IF;
+
+    DELETE FROM task_tags
+    WHERE task_id = p_task_id;
+
+    FOREACH v_tag IN ARRAY COALESCE(p_tags, ARRAY[]::TEXT[])
+    LOOP
+        v_normalized_tag := LOWER(TRIM(v_tag));
+
+        IF v_normalized_tag <> '' THEN
+            INSERT INTO tags (name, normalized_name)
+            VALUES (TRIM(v_tag), v_normalized_tag)
+            ON CONFLICT (normalized_name)
+            DO UPDATE SET normalized_name = EXCLUDED.normalized_name
+            RETURNING id INTO v_tag_id;
+
+            INSERT INTO task_tags (task_id, tag_id)
+            VALUES (p_task_id, v_tag_id)
+            ON CONFLICT DO NOTHING;
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+ALTER FUNCTION set_task_tags_native(INT, INT, TEXT[])
+    SECURITY DEFINER;
+
+ALTER FUNCTION set_task_tags_native(INT, INT, TEXT[])
+    SET search_path = public, pg_temp;
+
+-- GIN-backed task search with optional normalized tag filtering
+CREATE OR REPLACE FUNCTION search_tasks_native(
+    p_query TEXT DEFAULT NULL,
+    p_tags TEXT[] DEFAULT NULL,
+    p_contest_id INT DEFAULT NULL
+)
+RETURNS TABLE (
+    id INT,
+    contest_id INT,
+    title VARCHAR,
+    description TEXT,
+    max_score NUMERIC,
+    task_order INT,
+    tags TEXT[]
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        t.id,
+        t.contest_id,
+        t.title,
+        t.description,
+        t.max_score,
+        t.task_order,
+        COALESCE(
+            (
+                ARRAY_AGG(DISTINCT tg.name)
+                    FILTER (WHERE tg.id IS NOT NULL)
+            )::TEXT[],
+            ARRAY[]::TEXT[]
+        ) AS tags
+    FROM tasks t
+    LEFT JOIN task_tags tt ON tt.task_id = t.id
+    LEFT JOIN tags tg ON tg.id = tt.tag_id
+    WHERE
+        (
+            p_query IS NULL
+            OR TRIM(p_query) = ''
+            OR to_tsvector(
+                'simple',
+                COALESCE(t.title, '') || ' ' || COALESCE(t.description, '')
+            ) @@ websearch_to_tsquery('simple', p_query)
+        )
+        AND (
+            p_contest_id IS NULL
+            OR t.contest_id = p_contest_id
+        )
+        AND (
+            p_tags IS NULL
+            OR CARDINALITY(p_tags) = 0
+            OR NOT EXISTS (
+                SELECT 1
+                FROM UNNEST(p_tags) requested_tag
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM task_tags requested_tt
+                    JOIN tags requested_tg
+                      ON requested_tg.id = requested_tt.tag_id
+                    WHERE requested_tt.task_id = t.id
+                      AND requested_tg.normalized_name =
+                          LOWER(TRIM(requested_tag))
+                )
+            )
+        )
+    GROUP BY
+        t.id,
+        t.contest_id,
+        t.title,
+        t.description,
+        t.max_score,
+        t.task_order
+    ORDER BY t.contest_id, t.task_order, t.id;
+END;
+$$ LANGUAGE plpgsql;
+
 -- ============================================================
 -- 7. Enrollment Functions
 -- ============================================================
@@ -698,6 +872,120 @@ BEGIN
         v_remaining := CEIL(v_cooldown - v_elapsed_secs);
         RAISE EXCEPTION 'Submission cooldown active: please wait % more second(s) before submitting to this task again', v_remaining::INT;
     END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- L. Submit Entry Atomically
+--    Performs all validation and inserts the submission in one transaction.
+CREATE OR REPLACE FUNCTION submit_entry_native(
+    p_contest_id INT,
+    p_user_id INT,
+    p_task_id INT,
+    p_submission_data JSONB
+)
+RETURNS TABLE (
+    submission_id INT,
+    submitted_at TIMESTAMP WITH TIME ZONE
+) AS $$
+DECLARE
+    v_contest_status VARCHAR;
+    v_start_time TIMESTAMP WITH TIME ZONE;
+    v_end_time TIMESTAMP WITH TIME ZONE;
+    v_submission_id INT;
+    v_submitted_at TIMESTAMP WITH TIME ZONE;
+BEGIN
+    IF p_submission_data IS NULL
+       OR jsonb_typeof(p_submission_data) <> 'object' THEN
+        RAISE EXCEPTION 'Submission data must be a JSON object';
+    END IF;
+
+    -- Score and verdict are trusted worker outputs.
+    IF p_submission_data ?| ARRAY['score', 'verdict'] THEN
+        RAISE EXCEPTION
+            'Submission data cannot contain trusted result fields: score or verdict';
+    END IF;
+
+    SELECT status, start_time, end_time
+    INTO v_contest_status, v_start_time, v_end_time
+    FROM contests
+    WHERE id = p_contest_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Contest not found';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM enrollments
+        WHERE contest_id = p_contest_id
+          AND user_id = p_user_id
+    ) THEN
+        RAISE EXCEPTION
+            'User is not enrolled in contest %',
+            p_contest_id;
+    END IF;
+
+    IF v_contest_status <> 'ACTIVE' THEN
+        RAISE EXCEPTION
+            'Submissions are only allowed for ACTIVE contests';
+    END IF;
+
+    IF CURRENT_TIMESTAMP < v_start_time THEN
+        RAISE EXCEPTION
+            'Submissions are not allowed yet. The contest has not started';
+    END IF;
+
+    IF CURRENT_TIMESTAMP > v_end_time THEN
+        RAISE EXCEPTION
+            'Submissions are closed. The contest has ended';
+    END IF;
+
+    IF p_task_id IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM tasks
+            WHERE id = p_task_id
+              AND contest_id = p_contest_id
+        ) THEN
+            RAISE EXCEPTION
+                'Task % does not belong to contest %',
+                p_task_id,
+                p_contest_id;
+        END IF;
+
+        -- Prevent concurrent requests from bypassing the cooldown.
+        PERFORM pg_advisory_xact_lock(p_user_id, p_task_id);
+
+        PERFORM check_submission_cooldown_native(
+            p_task_id,
+            p_user_id
+        );
+
+        PERFORM validate_submission_schema_native(
+            p_task_id,
+            p_submission_data
+        );
+    END IF;
+
+    INSERT INTO submissions (
+        contest_id,
+        user_id,
+        task_id,
+        submission_data,
+        status
+    )
+    VALUES (
+        p_contest_id,
+        p_user_id,
+        p_task_id,
+        p_submission_data,
+        'PENDING'
+    )
+    RETURNING id, submissions.submitted_at
+    INTO v_submission_id, v_submitted_at;
+
+    RETURN QUERY
+    SELECT v_submission_id, v_submitted_at;
 END;
 $$ LANGUAGE plpgsql;
 

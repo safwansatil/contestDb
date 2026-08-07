@@ -92,6 +92,35 @@ ALTER TABLE tasks ADD CONSTRAINT chk_task_cooldown CHECK (submission_cooldown_se
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS chk_task_order;
 ALTER TABLE tasks ADD CONSTRAINT chk_task_order CHECK (task_order >= 0);
 
+-- 3c. Normalized Task Tags
+CREATE TABLE IF NOT EXISTS tags (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL,
+    normalized_name VARCHAR(50) NOT NULL UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_tags (
+    task_id INT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    tag_id INT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (task_id, tag_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_tags_tag_id
+    ON task_tags(tag_id);
+
+CREATE INDEX IF NOT EXISTS idx_tags_normalized_name
+    ON tags(normalized_name);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_search_gin
+    ON tasks
+    USING GIN (
+        to_tsvector(
+            'simple',
+            COALESCE(title, '') || ' ' || COALESCE(description, '')
+        )
+    );
+
 -- 4. Submissions Table (Flexible payload via JSONB, standardized scoring)
 CREATE TABLE IF NOT EXISTS submissions (
     id SERIAL PRIMARY KEY,
@@ -110,6 +139,21 @@ CREATE TABLE IF NOT EXISTS submissions (
 
 -- Fallbacks if table already existed
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS task_id INT REFERENCES tasks(id) ON DELETE CASCADE;
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS attempt_count INT DEFAULT 0 NOT NULL;
+
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS last_error TEXT;
+
+ALTER TABLE submissions
+    DROP CONSTRAINT IF EXISTS chk_submission_attempt_count;
+
+ALTER TABLE submissions
+    ADD CONSTRAINT chk_submission_attempt_count
+    CHECK (attempt_count >= 0);
 
 -- 5. Contest Visibility Table
 --    Per-contest, host-configurable flags that control which fields are exposed to public viewers.
