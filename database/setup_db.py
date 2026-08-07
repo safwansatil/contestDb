@@ -8,9 +8,9 @@ import psycopg
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("MIGRATION_DATABASE_URL")
 if not DATABASE_URL:
-    print("Error: DATABASE_URL not found in root '.env' file!")
+    print("Error: MIGRATION_DATABASE_URL not found in root '.env' file!")
     sys.exit(1)
 
 # 2. Files to execute in order
