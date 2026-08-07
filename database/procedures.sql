@@ -507,6 +507,139 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Normalize and replace all tags assigned to a task
+CREATE OR REPLACE FUNCTION set_task_tags_native(
+    p_task_id INT,
+    p_user_id INT,
+    p_tags TEXT[]
+) RETURNS VOID AS $$
+DECLARE
+    v_contest_id INT;
+    v_role VARCHAR;
+    v_tag TEXT;
+    v_normalized_tag TEXT;
+    v_tag_id INT;
+BEGIN
+    SELECT contest_id INTO v_contest_id
+    FROM tasks
+    WHERE id = p_task_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Task not found';
+    END IF;
+
+    SELECT role INTO v_role
+    FROM enrollments
+    WHERE contest_id = v_contest_id
+      AND user_id = p_user_id;
+
+    IF v_role IS NULL OR v_role NOT IN ('HOST', 'MODERATOR') THEN
+        RAISE EXCEPTION 'Unauthorized: Only Host or Moderator can update task tags';
+    END IF;
+
+    DELETE FROM task_tags
+    WHERE task_id = p_task_id;
+
+    FOREACH v_tag IN ARRAY COALESCE(p_tags, ARRAY[]::TEXT[])
+    LOOP
+        v_normalized_tag := LOWER(TRIM(v_tag));
+
+        IF v_normalized_tag <> '' THEN
+            INSERT INTO tags (name, normalized_name)
+            VALUES (TRIM(v_tag), v_normalized_tag)
+            ON CONFLICT (normalized_name)
+            DO UPDATE SET normalized_name = EXCLUDED.normalized_name
+            RETURNING id INTO v_tag_id;
+
+            INSERT INTO task_tags (task_id, tag_id)
+            VALUES (p_task_id, v_tag_id)
+            ON CONFLICT DO NOTHING;
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+ALTER FUNCTION set_task_tags_native(INT, INT, TEXT[])
+    SECURITY DEFINER;
+
+ALTER FUNCTION set_task_tags_native(INT, INT, TEXT[])
+    SET search_path = public, pg_temp;
+
+-- GIN-backed task search with optional normalized tag filtering
+CREATE OR REPLACE FUNCTION search_tasks_native(
+    p_query TEXT DEFAULT NULL,
+    p_tags TEXT[] DEFAULT NULL,
+    p_contest_id INT DEFAULT NULL
+)
+RETURNS TABLE (
+    id INT,
+    contest_id INT,
+    title VARCHAR,
+    description TEXT,
+    max_score NUMERIC,
+    task_order INT,
+    tags TEXT[]
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        t.id,
+        t.contest_id,
+        t.title,
+        t.description,
+        t.max_score,
+        t.task_order,
+        COALESCE(
+            (
+                ARRAY_AGG(DISTINCT tg.name)
+                    FILTER (WHERE tg.id IS NOT NULL)
+            )::TEXT[],
+            ARRAY[]::TEXT[]
+        ) AS tags
+    FROM tasks t
+    LEFT JOIN task_tags tt ON tt.task_id = t.id
+    LEFT JOIN tags tg ON tg.id = tt.tag_id
+    WHERE
+        (
+            p_query IS NULL
+            OR TRIM(p_query) = ''
+            OR to_tsvector(
+                'simple',
+                COALESCE(t.title, '') || ' ' || COALESCE(t.description, '')
+            ) @@ websearch_to_tsquery('simple', p_query)
+        )
+        AND (
+            p_contest_id IS NULL
+            OR t.contest_id = p_contest_id
+        )
+        AND (
+            p_tags IS NULL
+            OR CARDINALITY(p_tags) = 0
+            OR NOT EXISTS (
+                SELECT 1
+                FROM UNNEST(p_tags) requested_tag
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM task_tags requested_tt
+                    JOIN tags requested_tg
+                      ON requested_tg.id = requested_tt.tag_id
+                    WHERE requested_tt.task_id = t.id
+                      AND requested_tg.normalized_name =
+                          LOWER(TRIM(requested_tag))
+                )
+            )
+        )
+    GROUP BY
+        t.id,
+        t.contest_id,
+        t.title,
+        t.description,
+        t.max_score,
+        t.task_order
+    ORDER BY t.contest_id, t.task_order, t.id;
+END;
+$$ LANGUAGE plpgsql;
+
 -- ============================================================
 -- 7. Enrollment Functions
 -- ============================================================
