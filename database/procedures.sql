@@ -248,6 +248,192 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
+-- Post-contest rating calculation
+-- ============================================================
+CREATE OR REPLACE FUNCTION calculate_contest_ratings_native(
+    p_contest_id INT,
+    p_user_id INT
+) RETURNS INT AS $$
+DECLARE
+    v_end_time TIMESTAMP WITH TIME ZONE;
+    v_participant_count INT;
+    v_rows_inserted INT;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM enrollments
+        WHERE contest_id = p_contest_id
+        AND user_id = p_user_id
+        AND role IN ('HOST', 'MODERATOR')
+    ) THEN
+        RAISE EXCEPTION 'Unauthorized: Only Host or Moderator can calculate ratings';
+    END IF;
+
+    SELECT end_time
+    INTO v_end_time
+    FROM contests
+    WHERE id = p_contest_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Contest not found';
+    END IF;
+
+    IF CURRENT_TIMESTAMP < v_end_time THEN
+        RAISE EXCEPTION 'Contest has not ended yet';
+    END IF;
+
+    -- Prevent applying ratings twice.
+    IF EXISTS (
+        SELECT 1
+        FROM contest_rating_history
+        WHERE contest_id = p_contest_id
+    ) THEN
+        RETURN 0;
+    END IF;
+
+    SELECT COUNT(*)
+    INTO v_participant_count
+    FROM enrollments
+    WHERE contest_id = p_contest_id
+      AND role = 'PARTICIPANT';
+
+    IF v_participant_count = 0 THEN
+        RETURN 0;
+    END IF;
+
+    WITH participants AS MATERIALIZED (
+        SELECT
+            ranked.user_id,
+            DENSE_RANK() OVER (
+                ORDER BY ranked.total_score DESC
+            )::INT AS final_rank,
+            ranked.old_rating
+        FROM (
+            SELECT
+                l.user_id,
+                l.total_score,
+                u.current_rating AS old_rating
+            FROM get_leaderboard(p_contest_id, NULL) l
+            JOIN enrollments e
+            ON e.contest_id = p_contest_id
+            AND e.user_id = l.user_id
+            AND e.role = 'PARTICIPANT'
+            JOIN users u
+            ON u.id = l.user_id
+        ) ranked
+    ),
+    calculated AS (
+        SELECT
+            p.user_id,
+            p.final_rank,
+            p.old_rating,
+
+            CASE
+                WHEN v_participant_count = 1 THEN 0.5
+                ELSE
+                    (v_participant_count - p.final_rank)::NUMERIC
+                    / (v_participant_count - 1)
+            END AS actual_score,
+
+            CASE
+                WHEN v_participant_count = 1 THEN 0.5
+                ELSE (
+                    SELECT AVG(
+                        1.0 / (
+                            1.0 +
+                            POWER(
+                                10.0,
+                                (op.old_rating - p.old_rating)::NUMERIC / 400.0
+                            )
+                        )
+                    )
+                    FROM participants op
+                    WHERE op.user_id <> p.user_id
+                )
+            END AS expected_score
+        FROM participants p
+    ),
+    rating_changes AS (
+        SELECT
+            user_id,
+            final_rank,
+            old_rating,
+            ROUND(
+                32 * (actual_score - expected_score)
+            )::INT AS rating_change
+        FROM calculated
+    ),
+    inserted AS (
+        INSERT INTO contest_rating_history (
+            contest_id,
+            user_id,
+            old_rating,
+            rating_change,
+            new_rating,
+            final_rank
+        )
+        SELECT
+            p_contest_id,
+            rc.user_id,
+            rc.old_rating,
+            rc.rating_change,
+            rc.old_rating + rc.rating_change,
+            rc.final_rank
+        FROM rating_changes rc
+        ON CONFLICT (contest_id, user_id) DO NOTHING
+        RETURNING user_id, new_rating
+    )
+    UPDATE users u
+    SET current_rating = i.new_rating
+    FROM inserted i
+    WHERE u.id = i.user_id;
+
+    GET DIAGNOSTICS v_rows_inserted = ROW_COUNT;
+
+    UPDATE contests
+    SET status = 'COMPLETED'
+    WHERE id = p_contest_id;
+
+    RETURN v_rows_inserted;
+END;
+$$ LANGUAGE plpgsql;
+
+ALTER FUNCTION calculate_contest_ratings_native(INT, INT)
+    SECURITY DEFINER;
+
+ALTER FUNCTION calculate_contest_ratings_native(INT, INT)
+    SET search_path = public, pg_temp;
+
+CREATE OR REPLACE FUNCTION get_user_rating_history_native(
+    p_user_id INT
+)
+RETURNS TABLE (
+    contest_id INT,
+    contest_title VARCHAR,
+    old_rating INT,
+    rating_change INT,
+    new_rating INT,
+    final_rank INT,
+    calculated_at TIMESTAMP WITH TIME ZONE
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        h.contest_id,
+        c.title,
+        h.old_rating,
+        h.rating_change,
+        h.new_rating,
+        h.final_rank,
+        h.calculated_at
+    FROM contest_rating_history h
+    JOIN contests c ON c.id = h.contest_id
+    WHERE h.user_id = p_user_id
+    ORDER BY h.calculated_at DESC, h.contest_id DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
 -- 3. Function to Register a New User Natively (pgcrypto bcrypt)
 -- ============================================================
 CREATE OR REPLACE FUNCTION register_user(p_username VARCHAR, p_password VARCHAR)
