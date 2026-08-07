@@ -842,6 +842,59 @@ async def get_contest_leaderboard(
                     detail=str(e)
                 )
 
+@app.post("/contests/{contest_id}/calculate-ratings")
+async def calculate_contest_ratings(
+    contest_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    user_id = current_user["user_id"]
+
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                # Only host/moderator may trigger rating finalization
+                await cur.execute(
+                    """
+                    SELECT role
+                    FROM enrollments
+                    WHERE contest_id = %s
+                      AND user_id = %s;
+                    """,
+                    (contest_id, user_id)
+                )
+
+                row = await cur.fetchone()
+
+                if not row or row[0] not in ("HOST", "MODERATOR"):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Only Host or Moderator can calculate contest ratings"
+                    )
+
+                await cur.execute(
+                    "SELECT calculate_contest_ratings_native(%s, %s);",
+                    (contest_id, user_id)
+                )
+
+                result = await cur.fetchone()
+                updated_count = result[0]
+
+                await conn.commit()
+
+                return {
+                    "message": "Contest ratings calculated",
+                    "participants_updated": updated_count
+                }
+
+            except HTTPException:
+                await conn.rollback()
+                raise
+
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error calculating contest ratings: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
+
 # User Profile & Activity Statistics Endpoints
 @app.get("/users/{user_id}/profile")
 async def get_user_profile(user_id: int, current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)):
@@ -951,6 +1004,34 @@ async def get_user_history(user_id: int, current_user: Optional[Dict[str, Any]] 
                 "contest_history": contest_history,
                 "submissions_history": submissions_history
             }
+
+@app.get("/users/{user_id}/rating-history")
+async def get_user_rating_history(user_id: int):
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT contest_id, contest_title, old_rating,
+                       rating_change, new_rating, final_rank, calculated_at
+                FROM get_user_rating_history_native(%s);
+                """,
+                (user_id,)
+            )
+
+            rows = await cur.fetchall()
+
+            return [
+                {
+                    "contest_id": row[0],
+                    "contest_title": row[1],
+                    "old_rating": row[2],
+                    "rating_change": row[3],
+                    "new_rating": row[4],
+                    "final_rank": row[5],
+                    "calculated_at": row[6]
+                }
+                for row in rows
+            ]
 
 # Contest Statistics & Timeline Endpoints
 @app.get("/contests/{contest_id}/statistics")
