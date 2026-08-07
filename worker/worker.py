@@ -108,7 +108,7 @@ def main():
                                     last_error = NULL
                                 WHERE id = %s
                                   AND status = 'JUDGING'
-                                  AND judged_by = %s;
+                                  AND judged_by = %s
                                   AND lease_expires_at > CURRENT_TIMESTAMP;
                                 """,
                                 (score, verdict, sub_id, WORKER_ID),
@@ -133,7 +133,7 @@ def main():
                                     last_error = %s
                                 WHERE id = %s
                                 AND status = 'JUDGING'
-                                AND judged_by = %s;
+                                AND judged_by = %s
                                 AND lease_expires_at > CURRENT_TIMESTAMP;
                                 """,
                                 (
