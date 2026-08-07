@@ -3,7 +3,7 @@ import sys
 import asyncio
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta, timezone
 import json
 import jwt
@@ -114,9 +114,13 @@ class TaskCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1)
     max_score: float = Field(100.0, ge=0.0)
-    submission_schema: Dict[str, Any] = Field(..., description="Required JSONB schema descriptor for submission_data validation (required_keys, numeric_keys).")
-    submission_cooldown_seconds: int = Field(0, ge=0, description="Cooldown seconds between submissions per user. 0 = no cooldown.")
-    task_order: int = Field(0, ge=0, description="Display order index within the contest. Lower = shown first.")
+    submission_schema: Dict[str, Any] = Field(
+        ...,
+        description="Required JSONB schema descriptor for submission_data validation."
+    )
+    submission_cooldown_seconds: int = Field(0, ge=0)
+    task_order: int = Field(0, ge=0)
+    tags: List[str] = Field(default_factory=list)
 
 class EnrollRequest(BaseModel):
     invitation_code: Optional[str] = None
@@ -452,11 +456,32 @@ async def get_contest_tasks(contest_id: int, current_user: Optional[Dict[str, An
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                SELECT id, title, description, max_score,
-                       submission_schema, submission_cooldown_seconds, task_order
-                FROM tasks
-                WHERE contest_id = %s
-                ORDER BY task_order ASC, id ASC;
+                SELECT
+                    t.id,
+                    t.title,
+                    t.description,
+                    t.max_score,
+                    t.submission_schema,
+                    t.submission_cooldown_seconds,
+                    t.task_order,
+                    COALESCE(
+                        ARRAY_AGG(tg.name ORDER BY tg.name)
+                            FILTER (WHERE tg.id IS NOT NULL),
+                        ARRAY[]::TEXT[]
+                    ) AS tags
+                FROM tasks t
+                LEFT JOIN task_tags tt ON tt.task_id = t.id
+                LEFT JOIN tags tg ON tg.id = tt.tag_id
+                WHERE t.contest_id = %s
+                GROUP BY
+                    t.id,
+                    t.title,
+                    t.description,
+                    t.max_score,
+                    t.submission_schema,
+                    t.submission_cooldown_seconds,
+                    t.task_order
+                ORDER BY t.task_order ASC, t.id ASC;
                 """,
                 (contest_id,)
             )
@@ -470,10 +495,41 @@ async def get_contest_tasks(contest_id: int, current_user: Optional[Dict[str, An
                     "max_score": float(row[3]),
                     "submission_schema": row[4],
                     "submission_cooldown_seconds": row[5],
-                    "task_order": row[6]
+                    "task_order": row[6],
+                    "tags": row[7]
                 })
             return tasks
 
+@app.get("/tasks/search")
+async def search_tasks(
+    query: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    contest_id: Optional[int] = None
+):
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT *
+                FROM search_tasks_native(%s, %s::text[], %s);
+                """,
+                (query, tags, contest_id)
+            )
+
+            rows = await cur.fetchall()
+
+            return [
+                {
+                    "id": row[0],
+                    "contest_id": row[1],
+                    "title": row[2],
+                    "description": row[3],
+                    "max_score": float(row[4]),
+                    "task_order": row[5],
+                    "tags": row[6]
+                }
+                for row in rows
+            ]
 @app.post("/contests/{contest_id}/tasks", status_code=status.HTTP_201_CREATED)
 async def create_task(contest_id: int, payload: TaskCreateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
@@ -494,8 +550,18 @@ async def create_task(contest_id: int, payload: TaskCreateRequest, current_user:
                     )
                 )
                 row = await cur.fetchone()
+                task_id = row[0]
+
+                await cur.execute(
+                    "SELECT set_task_tags_native(%s, %s, %s::text[]);",
+                    (task_id, user_id, payload.tags)
+                )
+
                 await conn.commit()
-                return {"message": "Task successfully created", "task_id": row[0]}
+                return {
+                    "message": "Task successfully created",
+                    "task_id": task_id
+                }
             except Exception as e:
                 await conn.rollback()
                 logger.error(f"Error adding task: {e}")
@@ -519,6 +585,10 @@ async def update_task(task_id: int, payload: TaskCreateRequest, current_user: Di
                         payload.submission_cooldown_seconds,
                         payload.task_order
                     )
+                )
+                await cur.execute(
+                    "SELECT set_task_tags_native(%s, %s, %s::text[]);",
+                    (task_id, user_id, payload.tags)
                 )
                 await conn.commit()
                 return {"message": "Task successfully updated"}

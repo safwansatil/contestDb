@@ -37,6 +37,8 @@ GRANT SELECT ON
     contests,
     enrollments,
     tasks,
+    tags,
+    task_tags,
     submissions,
     contest_visibility,
     kick_log,
