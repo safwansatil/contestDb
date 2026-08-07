@@ -7,17 +7,20 @@ import { AuthProvider } from './lib/auth'
 import { ToastProvider } from './lib/toast'
 import { Aurora } from './components/ui'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { ThemeProvider } from './lib/theme'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <ErrorBoundary>
-        <AuthProvider>
-          <ToastProvider>
-            <Aurora />
-            <App />
-          </ToastProvider>
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <ToastProvider>
+              <Aurora />
+              <App />
+            </ToastProvider>
+          </AuthProvider>
+        </ThemeProvider>
       </ErrorBoundary>
     </BrowserRouter>
   </StrictMode>,

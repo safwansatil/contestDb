@@ -9,6 +9,7 @@ import { useAuth } from '../lib/auth'
 import { useToast } from '../lib/toast'
 import { Page, Loader, Empty, Pill, RankBadge, Avatar, Modal, Spinner } from '../components/ui'
 import { SubmitModal } from '../components/SubmitModal'
+import { IconSeal, IconEye, IconArrowLeft } from '../components/icons'
 
 const TABS = (c: Contest, admin: boolean) => [
   ['overview', 'Overview', null],
@@ -65,7 +66,7 @@ export function ContestDetail() {
   return (
     <Page>
       <div className="page">
-        <button className="btn ghost sm" onClick={() => nav('/app')} style={{ marginBottom: 14 }}>← Explore</button>
+        <button className="btn ghost sm" onClick={() => nav('/app')} style={{ marginBottom: 14 }}><IconArrowLeft size={15} /> Explore</button>
 
         {/* Hero */}
         <div className="glass chero">
@@ -279,8 +280,8 @@ function Leaderboard({ c, admin, frozen, meId }: { c: Contest; admin: boolean; f
   return (
     <div>
       {frozen && (admin
-        ? <div className="freeze-banner admin"><span className="ic">👁</span><div><b>Admin view — live standings.</b> <span className="dim">Participants currently see the board frozen at {fmtDate(c.freeze_time)}.</span></div></div>
-        : <div className="freeze-banner"><span className="ic">❄</span><div><b>Scoreboard frozen.</b> <span className="dim">Standings locked as of {fmtDate(c.freeze_time)}. Full results reveal when the contest ends.</span></div></div>)}
+        ? <div className="freeze-banner admin"><span className="ic"><IconEye size={19} /></span><div><b>Admin view — live standings.</b> <span className="dim">Participants currently see the board sealed at {fmtDate(c.freeze_time)}.</span></div></div>
+        : <div className="freeze-banner"><span className="ic"><IconSeal size={19} /></span><div><b>Standings sealed.</b> <span className="dim">Locked as of {fmtDate(c.freeze_time)}. Full results reveal when the contest ends.</span></div></div>)}
       <div className="glass" style={{ overflow: 'hidden' }}>
         <table className="lb">
           <thead><tr><th style={{ width: 70 }}>Rank</th><th>Participant</th><th style={{ textAlign: 'right' }}>{c.ranking_strategy === 'ICPC' ? 'Solved' : 'Score'}</th></tr></thead>

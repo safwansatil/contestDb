@@ -1,7 +1,30 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { useAuth } from '../lib/auth'
+import { useTheme, THEMES } from '../lib/theme'
 import { Avatar } from './ui'
+import {
+  IconExplore, IconQuill, EmblemGuild, EmblemSketch, EmblemGeometry,
+} from './icons'
+
+const EMBLEM = { guild: EmblemGuild, sketchbook: EmblemSketch, geometry: EmblemGeometry }
+
+export function ThemeSwitcher() {
+  const { theme, setTheme } = useTheme()
+  return (
+    <div className="themeswitch" role="group" aria-label="Theme">
+      {THEMES.map((t) => {
+        const E = EMBLEM[t.id]
+        return (
+          <button key={t.id} className={theme === t.id ? 'on' : ''} onClick={() => setTheme(t.id)}
+            title={`${t.label} — ${t.blurb}`} aria-pressed={theme === t.id} aria-label={t.label}>
+            <E size={16} />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 export function Nav() {
   const { user, logout } = useAuth()
@@ -11,15 +34,20 @@ export function Nav() {
   return (
     <nav className="nav">
       <Link to={user ? '/app' : '/'} className="brand">
-        <span className="mark">C</span>ContestDB
+        <span className="mark"><EmblemGuild size={19} /></span>ContestDB
       </Link>
       {user && (
         <div className="nav-links">
-          <NavLink to="/app" end className={({ isActive }) => (isActive ? 'active' : '')}>Explore</NavLink>
-          <NavLink to={`/users/${user.id}`} className={({ isActive }) => (isActive ? 'active' : '')}>Profile</NavLink>
+          <NavLink to="/app" end className={({ isActive }) => (isActive ? 'active' : '')}>
+            <span className="row" style={{ gap: 7 }}><IconExplore size={16} />Explore</span>
+          </NavLink>
+          <NavLink to={`/users/${user.id}`} className={({ isActive }) => (isActive ? 'active' : '')}>
+            <span className="row" style={{ gap: 7 }}><IconQuill size={16} />Profile</span>
+          </NavLink>
         </div>
       )}
       <div className="grow" />
+      <ThemeSwitcher />
       {user ? (
         <div style={{ position: 'relative' }}>
           <div onClick={() => setMenu((m) => !m)} className="row" style={{ cursor: 'pointer', gap: 9 }}>

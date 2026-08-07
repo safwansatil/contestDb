@@ -2,12 +2,14 @@ import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import gsap from 'gsap'
+import { ThemeSwitcher } from '../components/Nav'
+import { IconLedger, IconPalette, IconSeal, IconBolt, EmblemGuild } from '../components/icons'
 
 const FEATURES = [
-  { icon: '🗄️', title: 'Database-native engine', text: 'Ranking, freeze rules and scoring run as PostgreSQL stored functions — not scattered across app code.' },
-  { icon: '🏆', title: 'Any contest, any format', text: 'ICPC, robotics time-trials, chess, quizzes. A flexible JSONB payload adapts to every judging style.' },
-  { icon: '❄️', title: 'ICPC-style scoreboard freeze', text: 'Standings lock at freeze time for the crowd, while hosts keep watching the live board.' },
-  { icon: '⚡', title: 'Async judge queue', text: 'Submissions flow through a real PENDING → JUDGING → COMPLETED pipeline with standardized verdicts.' },
+  { Icon: IconLedger, title: 'Ledger-native engine', text: 'Ranking, freeze rules and scoring run as PostgreSQL stored functions — not scattered across app code.' },
+  { Icon: IconPalette, title: 'Any contest, any craft', text: 'ICPC, robotics time-trials, chess, quizzes. A flexible JSONB payload adapts to every judging style.' },
+  { Icon: IconSeal, title: 'The Seal — scoreboard freeze', text: 'Standings lock at freeze time for the crowd, while hosts keep watching the live board.' },
+  { Icon: IconBolt, title: 'Async judge queue', text: 'Submissions flow through a real PENDING → JUDGING → COMPLETED pipeline with standardized verdicts.' },
 ]
 const VERDICTS = [
   { v: 'ACCEPTED', c: 'tag-ac' }, { v: 'WRONG_ANSWER', c: 'tag-wa' },
@@ -45,16 +47,17 @@ export function Landing() {
     <div ref={root}>
       {/* Top bar (minimal, landing-only) */}
       <div className="row" style={{ padding: '20px 26px', maxWidth: 1200, margin: '0 auto' }}>
-        <Link to="/" className="brand"><span className="mark">C</span>ContestDB</Link>
+        <Link to="/" className="brand"><span className="mark"><EmblemGuild size={19} /></span>ContestDB</Link>
         <div className="grow" />
-        <Link to="/login" className="btn ghost sm">Sign in</Link>
+        <ThemeSwitcher />
+        <Link to="/login" className="btn ghost sm" style={{ marginLeft: 4 }}>Sign in</Link>
         <Link to="/signup" className="btn primary sm" style={{ marginLeft: 8 }}>Get started</Link>
       </div>
 
       {/* Hero */}
       <section style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 26px 80px', display: 'grid', gridTemplateColumns: '1.05fr 1fr', gap: 50, alignItems: 'center' }} className="hero-grid">
         <div>
-          <span className="hero-badge pill tag-gold" style={{ marginBottom: 22 }}>◆ Database-native contest platform</span>
+          <span className="hero-badge pill tag-gold" style={{ marginBottom: 22, display: 'inline-flex', gap: 6 }}><EmblemGuild size={13} /> Ledger-native contest platform</span>
           <h1 style={{ fontSize: 54, lineHeight: 1.08, letterSpacing: '-0.04em' }}>
             <div className="hero-line">Run any contest.</div>
             <div className="hero-line" style={{ paddingBottom: '0.08em', background: 'linear-gradient(120deg,var(--gold-2),var(--gold-deep))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Ranked in the database.</div>
@@ -78,7 +81,7 @@ export function Landing() {
             <div><div className="label">Live leaderboard</div><h3 style={{ fontSize: 18, marginTop: 4 }}>Max Speed Run</h3></div>
             <span className="strat">MAX</span>
           </div>
-          <div className="freeze-banner" style={{ margin: '14px 0' }}><span className="ic">❄</span><span style={{ fontSize: 12.5 }} className="dim">Scoreboard frozen · results reveal at end</span></div>
+          <div className="freeze-banner" style={{ margin: '14px 0' }}><span className="ic"><IconSeal size={18} /></span><span style={{ fontSize: 12.5 }} className="dim">Scoreboard sealed · results reveal at end</span></div>
           {[['satil', 82, 1], ['sayma', 75, 2], ['nondiny', 60, 3]].map(([n, s, r]) => (
             <div key={n as string} className="lb-row row" style={{ padding: '11px 0', borderBottom: '1px solid var(--glass-border)' }}>
               <span className={`rk-badge rk${r}`}>{r as number}</span>
@@ -98,8 +101,8 @@ export function Landing() {
           {FEATURES.map((f) => (
             <motion.div key={f.title} className="glass pad-lg"
               variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0, transition: { duration: 0.5 } } }}>
-              <div style={{ fontSize: 30, marginBottom: 12 }}>{f.icon}</div>
-              <h3 style={{ fontSize: 16.5, marginBottom: 8 }}>{f.title}</h3>
+              <div style={{ marginBottom: 14, color: 'var(--primary)' }}><f.Icon size={28} strokeWidth={1.5} /></div>
+              <h3 style={{ fontSize: 18, marginBottom: 8 }}>{f.title}</h3>
               <p className="dim" style={{ fontSize: 13.5, margin: 0 }}>{f.text}</p>
             </motion.div>
           ))}

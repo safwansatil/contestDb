@@ -2,6 +2,7 @@ import { type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useLottie } from 'lottie-react'
 import loaderAnim from '../assets/loader.json'
+import { IconClose } from './icons'
 
 /* ---------- Aurora background (glassmorphism ground) ---------- */
 export function Aurora() {
@@ -61,7 +62,7 @@ export function Modal({ title, subtitle, onClose, children, footer }: {
           exit={{ opacity: 0, scale: 0.96, y: 8 }} transition={{ type: 'spring', stiffness: 380, damping: 30 }}>
           <header>
             <div><h3>{title}</h3>{subtitle && <div className="faint" style={{ fontSize: 12 }}>{subtitle}</div>}</div>
-            <button className="iconbtn" onClick={onClose} aria-label="Close">✕</button>
+            <button className="iconbtn" onClick={onClose} aria-label="Close"><IconClose size={16} /></button>
           </header>
           <div className="body">{children}</div>
           {footer && <footer>{footer}</footer>}
