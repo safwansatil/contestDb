@@ -62,6 +62,26 @@ ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'PARTI
 ALTER TABLE enrollments DROP CONSTRAINT IF EXISTS chk_enrollment_role;
 ALTER TABLE enrollments ADD CONSTRAINT chk_enrollment_role CHECK (role IN ('HOST', 'MODERATOR', 'PARTICIPANT'));
 
+-- 3a. User Ratings
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS current_rating INT DEFAULT 1500 NOT NULL;
+
+CREATE TABLE IF NOT EXISTS contest_rating_history (
+    contest_id INT NOT NULL REFERENCES contests(id) ON DELETE CASCADE,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    old_rating INT NOT NULL,
+    rating_change INT NOT NULL,
+    new_rating INT NOT NULL,
+    final_rank INT NOT NULL,
+    calculated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    PRIMARY KEY (contest_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rating_history_user
+    ON contest_rating_history(user_id, calculated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_rating_history_contest
+    ON contest_rating_history(contest_id);
 -- 3b. Tasks Table
 --     submission_schema: Mandatory JSONB descriptor for the expected shape of submission_data.
 --       Example: {"required_keys": ["run_time_seconds", "restarts"], "numeric_keys": ["run_time_seconds"]}

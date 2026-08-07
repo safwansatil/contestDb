@@ -42,7 +42,8 @@ GRANT SELECT ON
     submissions,
     contest_visibility,
     kick_log,
-    contest_announcements
+    contest_announcements,
+    contest_rating_history
 TO contestdb_api;
 
 -- Existing functions execute with caller permissions, so the API needs
