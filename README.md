@@ -6,7 +6,7 @@ This is a generic contest management platform: it can hold, manage, and track an
 
 ---
 
-## 📐 Project Architecture & Layout
+##  Project Architecture & Layout
 
 The project implements a **Thin-Tier Architecture**:
 * **Backend API Gateway (`/backend`)**: A lightweight FastAPI application that exposes endpoints to ingest submissions and fetch leaderboards. It does not calculate rankings or scores.
@@ -42,7 +42,7 @@ contestDb/
 
 
 
-## 👥 Course & Team Details
+## Course & Team Details
 
 This project is submitted for:
 * **Course**: CSE 4410 (Database Management Systems II Lab)

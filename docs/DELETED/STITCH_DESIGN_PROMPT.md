@@ -1,4 +1,6 @@
-# ContestDB × "The Guild" — Stitch Design Brief
+# THIS IS OUTDATED, DO NOT FOLLOW THIS ANYMORE.
+
+## ContestDB × "The Guild" — Stitch Design Brief
 
 > **What this is.** A paste-ready prompt pack for **Google Stitch** to design ContestDB in the
 > *antique artisan's-ledger* theme from the reference ("The Guild"): parchment grounds, ink-black
