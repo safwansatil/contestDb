@@ -1,4 +1,6 @@
-# ContestDB — Frontend Plan & Build Brief
+# THIS IS OUTDATED DON'T FOLLOW THIS ANYMORE. 
+
+## ContestDB — Frontend Plan & Build Brief
 
 > **Purpose of this document.** It is a self-contained brief for building the ContestDB
 > web frontend. It explains what the project is, reverse-engineers the complete workflow

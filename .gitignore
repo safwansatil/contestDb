@@ -7,6 +7,8 @@ Project Presentation.md
 *.env
 .env
 
+temp/
+
 # Python build and cache
 __pycache__/
 *.py[cod]
