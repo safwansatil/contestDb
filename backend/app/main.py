@@ -868,7 +868,10 @@ async def calculate_contest_ratings(
                 if not row or row[0] not in ("HOST", "MODERATOR"):
                     raise HTTPException(
                         status_code=403,
-                        detail="Only Host or Moderator can calculate contest ratings"
+                        detail=(
+                            "Only Host or Moderator can calculate "
+                            "contest ratings"
+                        )
                     )
 
                 await cur.execute(
@@ -894,6 +897,34 @@ async def calculate_contest_ratings(
                 await conn.rollback()
                 logger.error(f"Error calculating contest ratings: {e}")
                 raise HTTPException(status_code=400, detail=str(e))
+
+
+# Participant Dashboard Endpoint
+@app.get("/dashboards/participant")
+async def get_participant_dashboard_api(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Return the complete participant dashboard for the authenticated user.
+    """
+    user_id = current_user["user_id"]
+
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT get_participant_dashboard(%s);",
+                (user_id,)
+            )
+
+            row = await cur.fetchone()
+
+            if not row or row[0] is None:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Could not generate participant dashboard"
+                )
+
+            return row[0]
 
 # User Profile & Activity Statistics Endpoints
 @app.get("/users/{user_id}/profile")
