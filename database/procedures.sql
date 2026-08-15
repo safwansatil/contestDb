@@ -1158,9 +1158,10 @@ BEGIN
         FROM enrollments
         WHERE contest_id = p_contest_id
           AND user_id = p_user_id
+          AND role = 'PARTICIPANT'
     ) THEN
         RAISE EXCEPTION
-            'User is not enrolled in contest %',
+            'User is not enrolled as a PARTICIPANT in contest %',
             p_contest_id;
     END IF;
 
