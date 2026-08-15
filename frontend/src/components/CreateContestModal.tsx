@@ -14,7 +14,7 @@ export function CreateContestModal({ onClose, onCreated }: { onClose: () => void
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const [f, setF] = useState({
-    title: '', contest_format: 'ICPC', judging_description: '',
+    title: '', contest_format: 'leetcode', judging_description: '',
     start_time: iso(24), freeze_time: iso(26), end_time: iso(27),
     max_participants: '', invitation_code: '', allow_late_enrollment: true,
   })
@@ -27,9 +27,11 @@ export function CreateContestModal({ onClose, onCreated }: { onClose: () => void
     if (!(s <= fr && fr <= e)) return toast('Times must satisfy: start ≤ freeze ≤ end', 'err')
     setBusy(true)
     try {
-      const finalStrategy = f.contest_format === 'ICPC' ? 'ICPC' : 'MAX'
+      const finalStrategy = f.contest_format === 'leetcode' ? 'SUM' : 'MAX'
       const res = await contestApi.create({
-        title: f.title.trim(), ranking_strategy: finalStrategy,
+        title: f.title.trim(), 
+        ranking_strategy: finalStrategy,
+        contest_type: f.contest_format,
         start_time: s.toISOString(), freeze_time: fr.toISOString(), end_time: e.toISOString(),
         judging_description: f.judging_description.trim(),
         max_participants: f.max_participants ? Number(f.max_participants) : null,
@@ -51,11 +53,11 @@ export function CreateContestModal({ onClose, onCreated }: { onClose: () => void
         <input value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Spring Robotics Sprint" /></div>
       <div className="field"><label>Contest Format</label>
         <select value={f.contest_format} onChange={(e) => set('contest_format', e.target.value)}>
-          <option value="ICPC">ICPC Coding Tournament</option>
-          <option value="CHESS">Chess Match</option>
+          <option value="leetcode">Competitive Programming</option>
+          <option value="chess">Chess Match</option>
         </select>
-        {f.contest_format === 'ICPC' && <p className="faint" style={{ margin: '4px 0 0', fontSize: 12 }}>Standard competitive programming. Ranked by problems solved, then penalty time.</p>}
-        {f.contest_format === 'CHESS' && <p className="faint" style={{ margin: '4px 0 0', fontSize: 12 }}>Chess matches played via Stockfish/Lichess evaluation.</p>}
+        {f.contest_format === 'leetcode' && <p className="faint" style={{ margin: '4px 0 0', fontSize: 12 }}>Standard competitive programming format (evaluated via webhook judge).</p>}
+        {f.contest_format === 'chess' && <p className="faint" style={{ margin: '4px 0 0', fontSize: 12 }}>Chess matches played via Stockfish/Lichess evaluation.</p>}
       </div>
       <div className="field"><label>Judging description</label>
         <textarea value={f.judging_description} onChange={(e) => set('judging_description', e.target.value)} placeholder="Explain how submissions are scored…" /></div>

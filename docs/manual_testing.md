@@ -58,11 +58,11 @@ Open your browser and navigate to the frontend dashboard at **`http://localhost:
 ### 2.2 Contest Creation (Host)
 1. Locate the **Host a contest** button on the top right.
 2. Fill out the form:
-   - **Title**: `Browser Testing Contest`
-   - **Contest Format**: `ICPC Coding Tournament`
+   - **Title**: `MVP Testing Contest`
+   - **Contest Format**: `Competitive Programming` (or `Chess Match`)
    - **Start/Freeze/End times**: Pick dates/times that make the contest currently active.
    - **Invitation Code**: `testcode`
-   - **Judging Logic**: `Testing standard evaluation`
+   - **Judging Logic**: `Testing MVP Webhook Evaluation`
 3. Click **Create contest**.
 4. The contest will appear in the main list with a red `Pending Approval` badge.
 
@@ -88,13 +88,15 @@ Open your browser and navigate to the frontend dashboard at **`http://localhost:
 
 ### 2.5 Participant Enrollment & Submission
 1. Log out, then log in as a participant: `nondiny` / `password123`.
-2. Click on `Browser Testing Contest`. Notice Nondiny is `Unenrolled`.
-3. Click **Join Contest**. A modal will appear.
-4. Enter the invitation code: `testcode` and submit.
-5. In the task submission panel, select `Task 1: Basic Math`.
-6. Enter a JSON payload into the submission box (e.g., `{"run_time_seconds": 12, "restarts": 0}`) and submit.
-7. Switch to your worker terminal — you should see the worker claim and judge the submission.
-8. The browser standings will refresh automatically to reflect the new score.
+2. Click on `MVP Chess Match` or `MVP LeetCode Contest` (seeded contests).
+3. Click **Join Contest**. (No invitation code required for these public seeded ones).
+4. In the tasks panel, click the submit button.
+5. Depending on the contest type:
+   - For **Competitive Programming**, the Monaco-like source code editor will appear. Write some python code containing `print()` to get an Accepted verdict.
+   - For **Chess Match**, the dynamic chessboard will appear. Make a move on the board to auto-generate the PGN payload.
+6. Submit the solution.
+7. Switch to your worker terminal — you should see the worker claim the submission and dispatch it to the FastAPI webhook endpoint.
+8. The browser modal will automatically poll the DB and update to show the Webhook's final verdict (`ACCEPTED` or `WRONG_ANSWER`) and score.
 
 ---
 

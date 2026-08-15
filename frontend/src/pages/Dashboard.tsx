@@ -87,7 +87,10 @@ function ContestCard({ c, onClick }: { c: Contest; onClick: () => void }) {
       <div className="rail" style={{ background: col }} />
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <Pill className="" dot={col}>{/* status */}<span style={{ color: col }}>{c.status === 'PENDING_APPROVAL' ? 'PENDING' : tstat}</span></Pill>
-        <span className="strat">{c.ranking_strategy}</span>
+        <div className="row" style={{ gap: 6 }}>
+          <span className="strat">{c.contest_type === 'leetcode' ? 'Competitive Programming' : c.contest_type === 'chess' ? 'Chess' : 'Custom'}</span>
+          <span className="strat">{c.ranking_strategy}</span>
+        </div>
       </div>
       <div>
         <h3>{c.title}</h3>

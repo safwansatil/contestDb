@@ -36,6 +36,7 @@ export interface Contest {
   status: ContestStatus; judging_description: string
   requires_invitation_code?: boolean; invitation_code?: string | null
   user_role: Role; max_participants: number | null; allow_late_enrollment: boolean
+  contest_type: string; judge_webhook_url: string | null
   visibility: Visibility
 }
 export interface Task {

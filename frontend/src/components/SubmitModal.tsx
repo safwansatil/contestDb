@@ -40,14 +40,20 @@ export function SubmitModal({ contest, tasks, initialTask, onClose, onJudged }: 
   async function submit() {
     const payload: Record<string, unknown> = {}
     
-    // For MVP, if it's ICPC, we expect source_code. If Chess, we expect pgn.
-    if (contest.ranking_strategy === 'ICPC') {
+    // For MVP, if it's leetcode, we expect source_code. If chess, we expect pgn.
+    if (contest.contest_type === 'leetcode' || contest.ranking_strategy === 'ICPC') {
       if (!values.source_code) return toast('Missing source code', 'err')
       payload.source_code = values.source_code
-      payload.language = values.language || 'python'
-    } else if (contest.ranking_strategy === 'MAX') {
+      payload.language_id = values.language_id || 'python'
+    } else if (contest.contest_type === 'chess') {
       if (!values.pgn) return toast('Make a move to generate PGN', 'err')
       payload.pgn = values.pgn
+      // The worker currently expects "fen" and "move" for the MVP chess judge
+      // But the ChessSubmissionUI yields PGN. Let's send pgn, fen, and move.
+      // Wait, we need to adapt what we send to match the MVP judge requirements.
+      // The judge expects fen and move.
+      payload.fen = values.fen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      payload.move = values.move || "e4"
     } else {
       for (const k of task.submission_schema?.required_keys || []) {
         const raw = values[k]
@@ -124,11 +130,11 @@ export function SubmitModal({ contest, tasks, initialTask, onClose, onJudged }: 
         </select>
       </div>
 
-      {contest.ranking_strategy === 'ICPC' && (
+      {(contest.contest_type === 'leetcode' || contest.ranking_strategy === 'ICPC') && (
         <>
           <div className="field">
             <label>Language</label>
-            <select value={values.language || 'python'} onChange={(e) => setVal('language', e.target.value)}>
+            <select value={values.language_id || 'python'} onChange={(e) => setVal('language_id', e.target.value)}>
               <option value="python">Python 3</option>
               <option value="cpp">C++</option>
               <option value="java">Java</option>
@@ -141,11 +147,15 @@ export function SubmitModal({ contest, tasks, initialTask, onClose, onJudged }: 
         </>
       )}
 
-      {contest.ranking_strategy === 'MAX' && (
-        <ChessSubmissionUI onMove={(pgn) => setVal('pgn', pgn)} />
+      {contest.contest_type === 'chess' && (
+        <ChessSubmissionUI onMove={(pgn: string, fen?: string, move?: string) => {
+          setVal('pgn', pgn)
+          if (fen) setVal('fen', fen)
+          if (move) setVal('move', move)
+        }} />
       )}
 
-      {!['ICPC', 'MAX'].includes(contest.ranking_strategy) && task.submission_schema?.required_keys?.map((k: string) => {
+      {!['leetcode', 'chess'].includes(contest.contest_type) && contest.ranking_strategy !== 'ICPC' && task.submission_schema?.required_keys?.map((k: string) => {
         const numeric = task.submission_schema?.numeric_keys?.includes(k)
         return (
           <div className="field" key={k}>

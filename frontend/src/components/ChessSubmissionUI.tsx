@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 
-export function ChessSubmissionUI({ onMove }: { onMove: (pgn: string) => void }) {
+export function ChessSubmissionUI({ onMove }: { onMove: (pgn: string, fen?: string, move?: string) => void }) {
   const [game, setGame] = useState(new Chess())
 
   function makeRandomMove() {
@@ -16,7 +16,7 @@ export function ChessSubmissionUI({ onMove }: { onMove: (pgn: string) => void })
     const gameCopy = new Chess(game.fen())
     const result = gameCopy.move(move)
     setGame(gameCopy)
-    onMove(gameCopy.pgn())
+    onMove(gameCopy.pgn(), gameCopy.fen(), result?.san)
     return result
   }
 

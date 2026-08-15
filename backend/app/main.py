@@ -311,7 +311,7 @@ async def get_contests(
             contests = []
             for row in rows:
                 (c_id, title, ranking, start, freeze, end, status_val, judging_desc, inv_code, role,
-                 max_p, allow_late, show_pc, show_lb, show_ml, show_tl, show_st, show_sc) = row
+                 max_p, allow_late, show_pc, show_lb, show_ml, show_tl, show_st, show_sc, contest_type, webhook_url) = row
                 has_code = inv_code is not None and inv_code != ""
                 is_admin = role in ("HOST", "MODERATOR")
                 contests.append({
@@ -328,6 +328,8 @@ async def get_contests(
                     "user_role": role,
                     "max_participants": max_p,
                     "allow_late_enrollment": allow_late,
+                    "contest_type": contest_type,
+                    "judge_webhook_url": webhook_url,
                     "visibility": {
                         "show_participant_count": show_pc if show_pc is not None else True,
                         "show_leaderboard": show_lb if show_lb is not None else True,
@@ -353,7 +355,8 @@ async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = 
                        c.status, c.judging_description, c.invitation_code, e.role,
                        c.max_participants, c.allow_late_enrollment,
                        cv.show_participant_count, cv.show_leaderboard, cv.show_member_list,
-                       cv.show_task_list, cv.show_statistics, cv.show_submission_count
+                       cv.show_task_list, cv.show_statistics, cv.show_submission_count,
+                       c.contest_type, c.judge_webhook_url
                 FROM contests c
                 LEFT JOIN enrollments e ON c.id = e.contest_id AND e.user_id = %s
                 LEFT JOIN contest_visibility cv ON c.id = cv.contest_id
@@ -366,7 +369,7 @@ async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = 
                 raise HTTPException(status_code=404, detail="Contest not found")
 
             (c_id, title, ranking, start, freeze, end, status, judging_desc, inv_code, role,
-             max_p, allow_late, show_pc, show_lb, show_ml, show_tl, show_st, show_sc) = row
+             max_p, allow_late, show_pc, show_lb, show_ml, show_tl, show_st, show_sc, contest_type, webhook_url) = row
             has_code = inv_code is not None and inv_code != ""
             is_admin = role in ("HOST", "MODERATOR")
 
@@ -384,6 +387,8 @@ async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = 
                 "user_role": role,
                 "max_participants": max_p,
                 "allow_late_enrollment": allow_late,
+                "contest_type": contest_type,
+                "judge_webhook_url": webhook_url,
                 "visibility": {
                     "show_participant_count": show_pc if show_pc is not None else True,
                     "show_leaderboard": show_lb if show_lb is not None else True,
