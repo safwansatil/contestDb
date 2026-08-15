@@ -41,6 +41,7 @@ export interface Contest {
 export interface Task {
   id: number; title: string; description: string; max_score: number
   submission_schema: { required_keys: string[]; numeric_keys: string[] }
+  webhook_url?: string | null
   submission_cooldown_seconds: number; task_order: number
 }
 export interface LeaderRow { user_id: number; username: string; total_score: number; rank: number }

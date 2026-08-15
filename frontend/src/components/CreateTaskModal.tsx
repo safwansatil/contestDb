@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { contestApi, apiError } from '../lib/api'
 import { useToast } from '../lib/toast'
 import { Modal, Spinner } from './ui'
-import { IconPlus } from './icons'
 
 export function CreateTaskModal({ contestId, onClose, onCreated }: { contestId: number; onClose: () => void; onCreated: () => void }) {
   const toast = useToast()

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { devApi, contestApi, apiError, type Contest, type Task } from '../lib/api'
 import { useToast } from '../lib/toast'
 import { Page, Loader, Empty, Pill, Modal, Spinner } from '../components/ui'
-import { IconSettings, IconCheck } from '../components/icons'
+import { IconGear, IconCheck } from '../components/icons'
 import { fmtDate } from '../lib/format'
 
 export function DeveloperDashboard() {
@@ -41,7 +41,7 @@ export function DeveloperDashboard() {
                     Strategy: {c.ranking_strategy} · Starts {fmtDate(c.start_time)}
                   </div>
                 </div>
-                <button className="btn ghost"><IconSettings size={20} /></button>
+                <button className="btn ghost"><IconGear size={20} /></button>
               </div>
             ))}
           </div>
