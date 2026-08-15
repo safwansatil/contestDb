@@ -7,6 +7,7 @@ import { Auth } from './pages/Auth'
 import { Dashboard } from './pages/Dashboard'
 import { ContestDetail } from './pages/ContestDetail'
 import { Profile } from './pages/Profile'
+import { DeveloperDashboard } from './pages/DeveloperDashboard'
 import { Loader } from './components/ui'
 import type { ReactNode } from 'react'
 
@@ -33,6 +34,7 @@ export function App() {
           <Route path="/app" element={<Protected><Dashboard /></Protected>} />
           <Route path="/contests/:id" element={<Protected><ContestDetail /></Protected>} />
           <Route path="/users/:id" element={<Protected><Profile /></Protected>} />
+          <Route path="/dev" element={<Protected><DeveloperDashboard /></Protected>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AnimatePresence>

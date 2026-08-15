@@ -10,11 +10,13 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
+    is_developer BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
--- Fallback to add password_hash if users table already existed
+-- Fallback to add columns if users table already existed
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_developer BOOLEAN DEFAULT FALSE;
 
 -- 2. Contests Table
 --    max_participants: NULL means unlimited enrollment cap.

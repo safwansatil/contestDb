@@ -38,12 +38,21 @@ export function Nav() {
       </Link>
       {user && (
         <div className="nav-links">
-          <NavLink to="/app" end className={({ isActive }) => (isActive ? 'active' : '')}>
-            <span className="row" style={{ gap: 7 }}><IconExplore size={16} />Explore</span>
-          </NavLink>
-          <NavLink to={`/users/${user.id}`} className={({ isActive }) => (isActive ? 'active' : '')}>
-            <span className="row" style={{ gap: 7 }}><IconQuill size={16} />Profile</span>
-          </NavLink>
+          {!user.is_developer && (
+            <>
+              <NavLink to="/app" end className={({ isActive }) => (isActive ? 'active' : '')}>
+                <span className="row" style={{ gap: 7 }}><IconExplore size={16} />Explore</span>
+              </NavLink>
+              <NavLink to={`/users/${user.id}`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                <span className="row" style={{ gap: 7 }}><IconQuill size={16} />Profile</span>
+              </NavLink>
+            </>
+          )}
+          {user.is_developer && (
+            <NavLink to="/dev" className={({ isActive }) => (isActive ? 'active' : '')}>
+              <span className="row" style={{ gap: 7 }}><IconExplore size={16} />Dev Portal</span>
+            </NavLink>
+          )}
         </div>
       )}
       <div className="grow" />

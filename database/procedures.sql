@@ -521,7 +521,12 @@ CREATE OR REPLACE FUNCTION create_contest_native(
 ) RETURNS INT AS $$
 DECLARE
     v_contest_id INT;
+    v_is_dev BOOLEAN;
 BEGIN
+    SELECT is_developer INTO v_is_dev FROM users WHERE id = p_creator_id;
+    IF v_is_dev THEN
+        RAISE EXCEPTION 'Developers cannot host contests';
+    END IF;
     INSERT INTO contests (title, ranking_strategy, start_time, freeze_time, end_time,
                           invitation_code, judging_description, status,
                           max_participants, allow_late_enrollment)
@@ -889,7 +894,12 @@ DECLARE
     v_allow_late            BOOLEAN;
     v_start_time            TIMESTAMP WITH TIME ZONE;
     v_current_participants  INT;
+    v_is_dev                BOOLEAN;
 BEGIN
+    SELECT is_developer INTO v_is_dev FROM users WHERE id = p_user_id;
+    IF v_is_dev THEN
+        RAISE EXCEPTION 'Developers cannot enroll in contests';
+    END IF;
     -- 1. Check if already enrolled (idempotent)
     SELECT EXISTS(
         SELECT 1 FROM enrollments

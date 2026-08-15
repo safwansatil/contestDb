@@ -55,34 +55,36 @@ Open your browser and navigate to the frontend dashboard at **`http://localhost:
    - **Password**: `password123`
 3. Click **Sign In**. The top right should now greet you with "Hello, sayma".
 
-### 2.2 Contest Creation
-1. Locate the **Host New Contest** panel on the left sidebar.
+### 2.2 Contest Creation (Host)
+1. Locate the **Host a contest** button on the top right.
 2. Fill out the form:
    - **Title**: `Browser Testing Contest`
-   - **Strategy**: `MAX` (or type a custom strategy)
-   - **Start/Freeze/End times**: Pick dates/times that make the contest currently active (e.g., Start: Yesterday, End: Tomorrow).
+   - **Contest Format**: `ICPC Coding Tournament`
+   - **Start/Freeze/End times**: Pick dates/times that make the contest currently active.
    - **Invitation Code**: `testcode`
    - **Judging Logic**: `Testing standard evaluation`
-3. Click **Create & Submit for Approval**.
-4. The contest will appear in the main list with a yellow `PENDING_APPROVAL` badge.
+3. Click **Create contest**.
+4. The contest will appear in the main list with a red `Pending Approval` badge.
 
-### 2.3 Contest Approval (Developer Action)
-*Note: Approving a contest is strictly a developer-level terminal action.*
-1. Open your SQL client or Neon console connected to your database.
-2. Run the following command (replace `<id>` with your new contest ID):
-   ```sql
-   SELECT approve_contest_native(<id>);
-   ```
-3. Refresh your browser. The contest badge should now be green (`ACTIVE`).
+### 2.3 Contest Configuration & Approval (Developer Action)
+1. Click **Sign In** and login as the seeded developer: `safwansatil` / `password123`.
+2. Notice you have a **Dev Portal** button in the navigation bar instead of "Host a contest".
+3. Click **Dev Portal** to open the Developer Dashboard.
+4. Locate the `Browser Testing Contest` in the list and click it.
+5. In the Developer config modal, you can review the tasks, and configure their `webhook_url` and `submission_schema`.
+6. Click **Approve Contest**. 
+7. Refresh your browser or go back to Explore. The contest badge should now be green (`Active`).
 
 ### 2.4 Task & Member Management
-1. Click on `Browser Testing Contest` in the list to view its details.
-2. Under the **Add Task to Contest** form, enter:
-   - **Title**: `Task 1: Basic Math`
+1. Log back in as `sayma` (the Host).
+2. Click on `Browser Testing Contest` in the Explore list to view its details.
+3. Switch to the **Tasks** tab.
+4. Click **Add New Task** and enter:
+   - **Task Title**: `Task 1: Basic Math`
    - **Description**: `Add two numbers`
    - **Max Score**: `100`
-3. Click **Add Task**. It will appear instantly in the Task List.
-4. (Optional) In the **Contest Role Manager**, you can select existing members and promote them to `MODERATOR`.
+5. Click **Create task**. It will appear instantly in the Task List.
+6. (Optional) The Developer (`safwansatil`) can now go back to the Dev Portal and inject the webhook logic into this new task.
 
 ### 2.5 Participant Enrollment & Submission
 1. Log out, then log in as a participant: `nondiny` / `password123`.

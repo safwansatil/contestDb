@@ -6,6 +6,7 @@ import { fmtRel, timelineStatus, statusColor } from '../lib/format'
 import { Page, Loader, Empty, Pill, fadeUp, stagger } from '../components/ui'
 import { CreateContestModal } from '../components/CreateContestModal'
 import { IconSearch, IconPlus } from '../components/icons'
+import { useAuth } from '../lib/auth'
 import { useToast } from '../lib/toast'
 
 const TIMELINES = ['ALL', 'ONGOING', 'UPCOMING', 'COMPLETED']
@@ -16,6 +17,7 @@ export function Dashboard() {
   const [timeline, setTimeline] = useState('ALL')
   const [creating, setCreating] = useState(false)
   const toast = useToast()
+  const { user } = useAuth()
   const nav = useNavigate()
 
   async function load() {
@@ -41,7 +43,7 @@ export function Dashboard() {
             <h1 style={{ fontSize: 27 }}>Explore contests</h1>
             <p className="dim" style={{ margin: '7px 0 0' }}>Any contest, any format — ranked natively inside PostgreSQL.</p>
           </div>
-          <button className="btn primary" onClick={() => setCreating(true)}><IconPlus size={16} /> Host a contest</button>
+          {!user?.is_developer && <button className="btn primary" onClick={() => setCreating(true)}><IconPlus size={16} /> Host a contest</button>}
         </div>
 
         <div className="filters">

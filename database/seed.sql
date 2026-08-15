@@ -7,11 +7,14 @@ TRUNCATE TABLE contest_announcements, kick_log, contest_visibility,
 RESTART IDENTITY CASCADE;
 
 -- 1. Insert Users (Team Member Names — Sayma and Nondiny first per convention)
-INSERT INTO users (username, password_hash) VALUES
-('sayma',   crypt('password123', gen_salt('bf'))),  -- ID 1
-('nondiny', crypt('password123', gen_salt('bf'))),  -- ID 2
-('satil',   crypt('password123', gen_salt('bf'))),  -- ID 3
-('tabib',   crypt('password123', gen_salt('bf')));  -- ID 4
+INSERT INTO users (username, password_hash, is_developer) VALUES
+('sayma',   crypt('password123', gen_salt('bf')), FALSE),  -- ID 1
+('nondiny', crypt('password123', gen_salt('bf')), FALSE),  -- ID 2
+('satil',   crypt('password123', gen_salt('bf')), FALSE),  -- ID 3
+('tabib',   crypt('password123', gen_salt('bf')), FALSE),  -- ID 4
+('safwansatil', crypt('password123', gen_salt('bf')), TRUE),   -- ID 5 (Developer)
+('saytas',  crypt('password123', gen_salt('bf')), FALSE),  -- ID 6
+('zoldyck', crypt('password123', gen_salt('bf')), FALSE);  -- ID 7
 
 -- 2. Insert Contests
 -- Contest 1: "Max Speed Run" — capped at 5 participants, currently frozen

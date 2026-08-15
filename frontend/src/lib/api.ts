@@ -46,7 +46,7 @@ export interface Task {
 export interface LeaderRow { user_id: number; username: string; total_score: number; rank: number }
 export interface Announcement { id: number; title: string; body: string; author: string; posted_at: string }
 export interface Member { user_id: number; username: string; role: Role }
-export interface User { id: number; username: string }
+export interface User { id: number; username: string; is_developer?: boolean }
 
 /* ---------- Auth ---------- */
 export const authApi = {
@@ -94,3 +94,12 @@ export const userApi = {
   search: (q: string) => api.get('/users/search', { params: { q } }).then(r => r.data as (User & { created_at: string })[]),
   serverTime: () => api.get('/time').then(r => r.data as { server_time: string }),
 }
+
+/* ---------- Developer ---------- */
+export const devApi = {
+  contests: () => api.get('/dev/contests').then(r => r.data as Contest[]),
+  approve: (id: number) => api.post(`/dev/contests/${id}/approve`).then(r => r.data),
+  updateTaskConfig: (taskId: number, webhook_url: string | null, submission_schema: Record<string, unknown>) => 
+    api.put(`/dev/tasks/${taskId}/config`, { webhook_url, submission_schema }).then(r => r.data)
+}
+

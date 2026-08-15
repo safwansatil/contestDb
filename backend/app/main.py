@@ -91,6 +91,15 @@ async def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] 
         sys.stdout.flush()
         return None
 
+async def get_developer_user(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT is_developer FROM users WHERE id = %s", (user["user_id"],))
+            row = await cur.fetchone()
+            if not row or not row[0]:
+                raise HTTPException(status_code=403, detail="Developer access required")
+    return user
+
 # Pydantic Schemas for validation
 class AuthRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, description="Username (alphanumeric, underscores, hyphens)")
@@ -256,9 +265,16 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Verify access token and return user profile details.
     """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT is_developer FROM users WHERE id = %s", (current_user["user_id"],))
+            row = await cur.fetchone()
+            is_developer = row[0] if row else False
+            
     return {
         "id": current_user["user_id"],
-        "username": current_user["username"]
+        "username": current_user["username"],
+        "is_developer": is_developer
     }
 
 # Contest Endpoints
@@ -1512,3 +1528,67 @@ async def get_contest_profile(
             except Exception as e:
                 logger.error(f"Error fetching contest profile: {e}")
                 raise HTTPException(status_code=400, detail=str(e))
+# ============================================================
+# Developer Dashboard Endpoints
+# ============================================================
+
+class DevTaskConfig(BaseModel):
+    webhook_url: Optional[str] = None
+    submission_schema: Dict[str, Any]
+
+@app.get("/dev/contests")
+async def dev_get_contests(dev_user: Dict[str, Any] = Depends(get_developer_user)):
+    """
+    Developer view to list all contests including PENDING_APPROVAL.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT id, title, ranking_strategy, status, start_time, end_time, created_at 
+                FROM contests 
+                ORDER BY created_at DESC
+                """
+            )
+            rows = await cur.fetchall()
+            return [
+                {
+                    "id": r[0], "title": r[1], "ranking_strategy": r[2], 
+                    "status": r[3], "start_time": r[4], "end_time": r[5], "created_at": r[6]
+                }
+                for r in rows
+            ]
+
+@app.post("/dev/contests/{contest_id}/approve")
+async def dev_approve_contest(contest_id: int, dev_user: Dict[str, Any] = Depends(get_developer_user)):
+    """
+    Developer action to approve a pending contest.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE contests SET status = 'ACTIVE' WHERE id = %s AND status = 'PENDING_APPROVAL' RETURNING id",
+                (contest_id,)
+            )
+            row = await cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=400, detail="Contest is not pending approval or does not exist")
+            await conn.commit()
+            return {"message": "Contest approved and is now ACTIVE"}
+
+@app.put("/dev/tasks/{task_id}/config")
+async def dev_update_task_config(task_id: int, config: DevTaskConfig, dev_user: Dict[str, Any] = Depends(get_developer_user)):
+    """
+    Developer action to inject webhook_url and schema to a task.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE tasks SET webhook_url = %s, submission_schema = %s::jsonb WHERE id = %s RETURNING id",
+                (config.webhook_url, json.dumps(config.submission_schema), task_id)
+            )
+            row = await cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Task not found")
+            await conn.commit()
+            return {"message": "Task dev config updated successfully"}

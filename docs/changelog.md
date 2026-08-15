@@ -6,6 +6,22 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.9.0] - 2026-08-15 (Developer Dashboard & Contest Format Pivot)
+### Added
+* Added `is_developer` flag to the `users` table to permanently distinguish system administrators from regular users.
+* Seeded new users `safwansatil` (Developer), `saytas`, and `zoldyck`.
+* Created `DeveloperDashboard.tsx` at `/dev` providing a dedicated interface for developers to view all contests, configure task webhooks and JSON schemas, and approve contests.
+* Created `dev_routes.py` (integrated into `main.py`) exposing secured `/dev/contests`, `/dev/contests/{id}/approve`, and `/dev/tasks/{task_id}/config` endpoints.
+* Updated `manual_testing.md` to document the separated Host (creating formats) and Developer (configuring tech) workflows.
+
+### Changed
+* Refactored `CreateContestModal.tsx` for Hosts. Replaced the technical "Ranking Strategy" dropdown with a simplified "Contest Format" selector (ICPC Coding Tournament vs Chess Match) which auto-assigns the strategy.
+* Refactored `CreateTaskModal.tsx` for Hosts. Removed the `webhook_url` and `submission_schema` inputs. Hosts now only provide Title, Description, and Score. The Developer configures the rest later.
+* Prevented developers from enrolling in or creating contests (enforced via DB constraints and UI).
+* Hid the "Host a contest" button in the frontend if the logged-in user is a developer.
+
+---
+
 ## [0.8.0] - 2026-08-15 (Async Webhook Execution Delegation)
 ### Added
 * **Webhook URL Support for Tasks** — Added `webhook_url VARCHAR(255)` column to the `tasks` table in [init.sql](database/init.sql). Tasks can now specify an external webhook URL for asynchronous judging.
