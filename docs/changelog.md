@@ -6,6 +6,17 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.10.0] - 2026-08-15 (Agnostic Contest Platform MVP - Chess & LeetCode)
+### Added
+* Added `contest_type` (`custom`, `chess`, `leetcode`) and `judge_webhook_url` to the `contests` table.
+* Added `judge_response` JSONB to the `submissions` table to store full webhook payloads.
+* Built-in Mock Webhook Judges at `POST /api/v1/judges/leetcode` and `POST /api/v1/judges/chess` inside the FastAPI `main.py` routing.
+* Worker now dispatches strictly to the Webhook Contract (`contest_id`, `contest_type`, `submission_id`, `participant_id`, `payload`) and immediately stores the response if synchronous.
+* Modified task creation: `submission_schema` is now optional and auto-populated based on the `contest_type`.
+* Seeded Contest 3 ("MVP Chess Match") and Contest 4 ("MVP LeetCode Contest").
+
+---
+
 ## [0.9.1] - 2026-08-15 (Contests Table Schema Hotfix)
 ### Fixed
 * Added `created_at` timestamp column to the `contests` table in `database/init.sql` to resolve a crashing SQL query in `/dev/contests` that prevented the developer dashboard from loading contests.

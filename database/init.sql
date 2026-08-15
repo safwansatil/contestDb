@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS contests (
     invitation_code VARCHAR(50),
     max_participants INT,                           -- NULL = unlimited; > 0 enforced by CHECK
     allow_late_enrollment BOOLEAN DEFAULT TRUE NOT NULL,
+    contest_type VARCHAR(50) DEFAULT 'custom' NOT NULL, -- 'leetcode', 'chess', 'custom'
+    judge_webhook_url VARCHAR(255),                 -- Webhook endpoint for the contest judge
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT chk_contest_times CHECK (freeze_time >= start_time AND end_time >= freeze_time),
     CONSTRAINT chk_contest_status CHECK (status IN ('PENDING_APPROVAL', 'ACTIVE', 'COMPLETED')),
@@ -45,6 +47,8 @@ ALTER TABLE contests ADD COLUMN IF NOT EXISTS judging_description TEXT;
 ALTER TABLE contests ADD COLUMN IF NOT EXISTS invitation_code VARCHAR(50);
 ALTER TABLE contests ADD COLUMN IF NOT EXISTS max_participants INT;
 ALTER TABLE contests ADD COLUMN IF NOT EXISTS allow_late_enrollment BOOLEAN DEFAULT TRUE NOT NULL;
+ALTER TABLE contests ADD COLUMN IF NOT EXISTS contest_type VARCHAR(50) DEFAULT 'custom' NOT NULL;
+ALTER TABLE contests ADD COLUMN IF NOT EXISTS judge_webhook_url VARCHAR(255);
 ALTER TABLE contests ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
 ALTER TABLE contests DROP CONSTRAINT IF EXISTS chk_contest_status;
 ALTER TABLE contests ADD CONSTRAINT chk_contest_status CHECK (status IN ('PENDING_APPROVAL', 'ACTIVE', 'COMPLETED'));
@@ -157,6 +161,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     status VARCHAR(20) DEFAULT 'PENDING' NOT NULL, -- 'PENDING', 'JUDGING', 'COMPLETED', 'FAILED'
     score NUMERIC DEFAULT 0 NOT NULL,              -- Standardized evaluation output written by judge worker
     verdict VARCHAR(50),                           -- Standardized evaluation description (e.g. 'AC', 'WA', 'RUN_SUCCESS')
+    judge_response JSONB,                          -- Full response payload from external webhook judge
     submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     judged_at TIMESTAMP WITH TIME ZONE,
     judged_by VARCHAR(50),                         -- Identifies the judging worker instance
@@ -165,6 +170,7 @@ CREATE TABLE IF NOT EXISTS submissions (
 
 -- Fallbacks if table already existed
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS task_id INT REFERENCES tasks(id) ON DELETE CASCADE;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS judge_response JSONB;
 ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMP WITH TIME ZONE;
 

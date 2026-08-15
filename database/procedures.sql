@@ -15,7 +15,8 @@ RETURNS TABLE (
     contest_id INT,
     user_id INT,
     submission_data JSONB,
-    webhook_url VARCHAR
+    webhook_url VARCHAR,
+    contest_type VARCHAR
 ) AS $$
 DECLARE
     v_sub_id INT;
@@ -72,8 +73,11 @@ BEGIN
         WHERE id = v_sub_id;
 
         RETURN QUERY
-        SELECT s.id, s.contest_id, s.user_id, s.submission_data, t.webhook_url
+        SELECT s.id, s.contest_id, s.user_id, s.submission_data, 
+               COALESCE(t.webhook_url, c.judge_webhook_url) AS webhook_url,
+               c.contest_type
         FROM submissions s
+        JOIN contests c ON s.contest_id = c.id
         LEFT JOIN tasks t ON s.task_id = t.id
         WHERE s.id = v_sub_id;
     END IF;
@@ -517,7 +521,9 @@ CREATE OR REPLACE FUNCTION create_contest_native(
     p_judging_description TEXT,
     p_creator_id INT,
     p_max_participants INT DEFAULT NULL,
-    p_allow_late_enrollment BOOLEAN DEFAULT TRUE
+    p_allow_late_enrollment BOOLEAN DEFAULT TRUE,
+    p_contest_type VARCHAR DEFAULT 'custom',
+    p_judge_webhook_url VARCHAR DEFAULT NULL
 ) RETURNS INT AS $$
 DECLARE
     v_contest_id INT;
@@ -529,10 +535,10 @@ BEGIN
     END IF;
     INSERT INTO contests (title, ranking_strategy, start_time, freeze_time, end_time,
                           invitation_code, judging_description, status,
-                          max_participants, allow_late_enrollment)
+                          max_participants, allow_late_enrollment, contest_type, judge_webhook_url)
     VALUES (p_title, p_ranking_strategy, p_start_time, p_freeze_time, p_end_time,
             p_invitation_code, p_judging_description, 'PENDING_APPROVAL',
-            p_max_participants, p_allow_late_enrollment)
+            p_max_participants, p_allow_late_enrollment, p_contest_type, p_judge_webhook_url)
     RETURNING id INTO v_contest_id;
 
     -- Creator is automatically enrolled as HOST
@@ -573,7 +579,9 @@ CREATE OR REPLACE FUNCTION update_contest_native(
     p_invitation_code VARCHAR,
     p_judging_description TEXT,
     p_max_participants INT DEFAULT NULL,
-    p_allow_late_enrollment BOOLEAN DEFAULT TRUE
+    p_allow_late_enrollment BOOLEAN DEFAULT TRUE,
+    p_contest_type VARCHAR DEFAULT 'custom',
+    p_judge_webhook_url VARCHAR DEFAULT NULL
 ) RETURNS VOID AS $$
 DECLARE
     v_role VARCHAR;
@@ -595,7 +603,9 @@ BEGIN
         invitation_code = p_invitation_code,
         judging_description = p_judging_description,
         max_participants = p_max_participants,
-        allow_late_enrollment = p_allow_late_enrollment
+        allow_late_enrollment = p_allow_late_enrollment,
+        contest_type = p_contest_type,
+        judge_webhook_url = p_judge_webhook_url
     WHERE id = p_contest_id;
 END;
 $$ LANGUAGE plpgsql;
@@ -1955,6 +1965,7 @@ $$ LANGUAGE plpgsql;
 -- ============================================================
 -- Function to Search & Filter Contests Natively
 -- ============================================================
+DROP FUNCTION IF EXISTS search_contests_native(INT, VARCHAR, VARCHAR, VARCHAR, VARCHAR);
 CREATE OR REPLACE FUNCTION search_contests_native(
     p_viewer_id INT,
     p_query VARCHAR DEFAULT NULL,
@@ -1980,7 +1991,9 @@ RETURNS TABLE (
     show_member_list BOOLEAN,
     show_task_list BOOLEAN,
     show_statistics BOOLEAN,
-    show_submission_count BOOLEAN
+    show_submission_count BOOLEAN,
+    contest_type VARCHAR,
+    judge_webhook_url VARCHAR
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -1988,7 +2001,8 @@ BEGIN
            c.status, c.judging_description, c.invitation_code, e.role::VARCHAR AS user_role,
            c.max_participants, c.allow_late_enrollment,
            cv.show_participant_count, cv.show_leaderboard, cv.show_member_list,
-           cv.show_task_list, cv.show_statistics, cv.show_submission_count
+           cv.show_task_list, cv.show_statistics, cv.show_submission_count,
+           c.contest_type, c.judge_webhook_url
     FROM contests c
     LEFT JOIN enrollments e ON c.id = e.contest_id AND e.user_id = p_viewer_id
     LEFT JOIN contest_visibility cv ON c.id = cv.contest_id

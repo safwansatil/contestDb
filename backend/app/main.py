@@ -129,14 +129,16 @@ class ContestCreateRequest(BaseModel):
     judging_description: str = Field(..., min_length=5)
     max_participants: Optional[int] = Field(None, ge=1, description="Max participant cap. NULL = unlimited.")
     allow_late_enrollment: bool = Field(True, description="If False, enrollment is blocked after start_time.")
+    contest_type: str = Field("custom", description="leetcode, chess, or custom")
+    judge_webhook_url: Optional[str] = Field(None, description="Webhook endpoint for the contest judge")
 
 class TaskCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1)
     max_score: float = Field(100.0, ge=0.0)
-    submission_schema: Dict[str, Any] = Field(
-        ...,
-        description="Required JSONB schema descriptor for submission_data validation."
+    submission_schema: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional JSONB schema descriptor. Will be auto-generated for chess/leetcode."
     )
     submission_cooldown_seconds: int = Field(0, ge=0)
     task_order: int = Field(0, ge=0)
@@ -402,7 +404,7 @@ async def create_contest(payload: ContestCreateRequest, current_user: Dict[str, 
         async with conn.cursor() as cur:
             try:
                 await cur.execute(
-                    "SELECT create_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                    "SELECT create_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                     (
                         payload.title,
                         payload.ranking_strategy,
@@ -413,7 +415,9 @@ async def create_contest(payload: ContestCreateRequest, current_user: Dict[str, 
                         payload.judging_description,
                         creator_id,
                         payload.max_participants,
-                        payload.allow_late_enrollment
+                        payload.allow_late_enrollment,
+                        payload.contest_type,
+                        payload.judge_webhook_url
                     )
                 )
                 row = await cur.fetchone()
@@ -442,7 +446,7 @@ async def update_contest(contest_id: int, payload: ContestCreateRequest, current
         async with conn.cursor() as cur:
             try:
                 await cur.execute(
-                    "SELECT update_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                    "SELECT update_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                     (
                         contest_id,
                         user_id,
@@ -454,7 +458,9 @@ async def update_contest(contest_id: int, payload: ContestCreateRequest, current
                         payload.invitation_code,
                         payload.judging_description,
                         payload.max_participants,
-                        payload.allow_late_enrollment
+                        payload.allow_late_enrollment,
+                        payload.contest_type,
+                        payload.judge_webhook_url
                     )
                 )
                 await conn.commit()
@@ -574,6 +580,17 @@ async def create_task(contest_id: int, payload: TaskCreateRequest, current_user:
     async with get_db_connection() as conn:
         async with conn.cursor() as cur:
             try:
+                if payload.submission_schema is None:
+                    await cur.execute("SELECT contest_type FROM contests WHERE id = %s", (contest_id,))
+                    ctype_row = await cur.fetchone()
+                    ctype = ctype_row[0] if ctype_row else "custom"
+                    if ctype == "chess":
+                        payload.submission_schema = {"required_keys": ["fen", "move"]}
+                    elif ctype == "leetcode":
+                        payload.submission_schema = {"required_keys": ["language_id", "source_code"]}
+                    else:
+                        payload.submission_schema = {}
+
                 import json as _json
                 await cur.execute(
                     "SELECT add_task_native(%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s);",
@@ -612,6 +629,23 @@ async def update_task(task_id: int, payload: TaskCreateRequest, current_user: Di
     async with get_db_connection() as conn:
         async with conn.cursor() as cur:
             try:
+                await cur.execute("SELECT contest_id FROM tasks WHERE id = %s", (task_id,))
+                c_row = await cur.fetchone()
+                c_id = c_row[0] if c_row else None
+                
+                if payload.submission_schema is None and c_id is not None:
+                    await cur.execute("SELECT contest_type FROM contests WHERE id = %s", (c_id,))
+                    ctype_row = await cur.fetchone()
+                    ctype = ctype_row[0] if ctype_row else "custom"
+                    if ctype == "chess":
+                        payload.submission_schema = {"required_keys": ["fen", "move"]}
+                    elif ctype == "leetcode":
+                        payload.submission_schema = {"required_keys": ["language_id", "source_code"]}
+                    else:
+                        payload.submission_schema = {}
+                elif payload.submission_schema is None:
+                    payload.submission_schema = {}
+
                 import json as _json
                 await cur.execute(
                     "SELECT update_task_native(%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s);",
@@ -1599,3 +1633,63 @@ async def dev_update_task_config(task_id: int, config: DevTaskConfig, dev_user: 
                 raise HTTPException(status_code=404, detail="Task not found")
             await conn.commit()
             return {"message": "Task dev config updated successfully"}
+
+# ============================================================
+# Webhook Judges (MVP)
+# ============================================================
+
+class WebhookPayloadRequest(BaseModel):
+    contest_id: str
+    contest_type: str
+    submission_id: str
+    participant_id: str
+    payload: Dict[str, Any]
+
+@app.post("/api/v1/judges/leetcode")
+async def leetcode_judge(request: WebhookPayloadRequest):
+    """
+    Mock LeetCode Webhook Judge
+    """
+    import random
+    execution_time = random.randint(10, 100)
+    code = str(request.payload.get("source_code", ""))
+    
+    if len(code.strip()) == 0:
+        score = 0
+        verdict = "COMPILE_ERROR"
+    elif "print" in code or "cout" in code:
+        score = 100
+        verdict = "ACCEPTED"
+    else:
+        score = 0
+        verdict = "WRONG_ANSWER"
+        
+    return {
+        "submission_id": request.submission_id,
+        "status": verdict,
+        "score": score,
+        "execution_time_ms": execution_time,
+        "feedback": "All test cases passed" if verdict == "ACCEPTED" else "Failed test cases"
+    }
+
+@app.post("/api/v1/judges/chess")
+async def chess_judge(request: WebhookPayloadRequest):
+    """
+    Mock Chess Webhook Judge
+    """
+    import random
+    fen = request.payload.get("fen", "")
+    move = request.payload.get("move", "")
+    
+    # In a real scenario, use python-chess to validate the move.
+    # For MVP, assume it is legal.
+    score = 10  # 10 points per valid move
+    verdict = "ACCEPTED"
+    
+    return {
+        "submission_id": request.submission_id,
+        "status": verdict,
+        "score": score,
+        "execution_time_ms": random.randint(1, 5),
+        "feedback": "Valid move"
+    }

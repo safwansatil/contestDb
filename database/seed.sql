@@ -43,6 +43,30 @@ INSERT INTO contests (id, title, ranking_strategy, start_time, freeze_time, end_
  NULL,   -- unlimited enrollment
  TRUE);
 
+-- Contest 3: "MVP Chess Match"
+INSERT INTO contests (id, title, ranking_strategy, start_time, freeze_time, end_time, status,
+                      judging_description, max_participants, allow_late_enrollment, contest_type, judge_webhook_url) VALUES
+(3, 'MVP Chess Match', 'MAX',
+ NOW() - INTERVAL '1 hour',
+ NOW() + INTERVAL '2 hours',
+ NOW() + INTERVAL '3 hours',
+ 'ACTIVE',
+ 'Standard chess match. Judged via built-in MVP webhook.',
+ 2,
+ TRUE, 'chess', 'http://127.0.0.1:8000/api/v1/judges/chess');
+
+-- Contest 4: "MVP LeetCode Contest"
+INSERT INTO contests (id, title, ranking_strategy, start_time, freeze_time, end_time, status,
+                      judging_description, max_participants, allow_late_enrollment, contest_type, judge_webhook_url) VALUES
+(4, 'MVP LeetCode Contest', 'SUM',
+ NOW() - INTERVAL '30 minutes',
+ NOW() + INTERVAL '2 hours',
+ NOW() + INTERVAL '3 hours',
+ 'ACTIVE',
+ 'Algorithmic coding contest. Judged via built-in MVP webhook.',
+ NULL,
+ TRUE, 'leetcode', 'http://127.0.0.1:8000/api/v1/judges/leetcode');
+
 -- 3. Insert Tasks
 -- Tasks must include submission_schema (NOT NULL).
 -- submission_schema format:
@@ -81,6 +105,18 @@ INSERT INTO enrollments (contest_id, user_id, role) VALUES
 (2, 1, 'HOST'),        -- sayma
 (2, 2, 'PARTICIPANT'), -- nondiny
 (2, 4, 'PARTICIPANT'); -- tabib
+
+-- Contest 3 (Chess): sayma=HOST, nondiny=PARTICIPANT, satil=PARTICIPANT
+INSERT INTO enrollments (contest_id, user_id, role) VALUES
+(3, 1, 'HOST'),
+(3, 2, 'PARTICIPANT'),
+(3, 3, 'PARTICIPANT');
+
+-- Contest 4 (Leetcode): sayma=HOST, nondiny=PARTICIPANT, tabib=PARTICIPANT
+INSERT INTO enrollments (contest_id, user_id, role) VALUES
+(4, 1, 'HOST'),
+(4, 2, 'PARTICIPANT'),
+(4, 4, 'PARTICIPANT');
 
 -- 5. Insert Contest Visibility Settings (Defaults for both seeded contests)
 -- Contest 1: show participant count and leaderboard; keep member list private

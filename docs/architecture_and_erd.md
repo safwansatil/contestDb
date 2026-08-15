@@ -58,6 +58,8 @@ erDiagram
         varchar invitation_code
         int max_participants
         boolean allow_late_enrollment
+        varchar contest_type
+        varchar judge_webhook_url
         timestamp_with_tz created_at
     }
 
@@ -90,6 +92,7 @@ erDiagram
         varchar status
         numeric score
         varchar verdict
+        jsonb judge_response
         timestamp_with_tz submitted_at
         timestamp_with_tz judged_at
         varchar judged_by
@@ -157,6 +160,8 @@ erDiagram
 * `invitation_code` (VARCHAR(50), NULLABLE): Invitation code needed to register for private contests.
 * `max_participants` (INT, NULLABLE): Enrollment cap. `NULL` = unlimited. When set, `enroll_in_contest()` uses `FOR UPDATE` locking to prevent race conditions at capacity.
 * `allow_late_enrollment` (BOOLEAN, DEFAULT TRUE, NOT NULL): If `FALSE`, enrollment is rejected after `start_time` has passed.
+* `contest_type` (VARCHAR(50), DEFAULT 'custom', NOT NULL): Type of the contest (`'leetcode'`, `'chess'`, `'custom'`).
+* `judge_webhook_url` (VARCHAR(255), NULLABLE): Webhook endpoint to dispatch judging payload.
 * `created_at` (TIMESTAMP WITH TIME ZONE, DEFAULT NOW()): Contest creation timestamp.
 * *Constraints*: `chk_contest_times` checks that `freeze_time >= start_time AND end_time >= freeze_time`, `chk_contest_status` validates status values, and `chk_max_participants` ensures `max_participants > 0` when set.
 
@@ -188,6 +193,7 @@ erDiagram
 * `status` (VARCHAR(20), DEFAULT 'PENDING', NOT NULL): Processing state (`'PENDING'`, `'JUDGING'`, `'COMPLETED'`, `'FAILED'`).
 * `score` (NUMERIC, DEFAULT 0, NOT NULL): Standardized score output written back by the worker.
 * `verdict` (VARCHAR(50)): Evaluation outcome written back by the worker.
+* `judge_response` (JSONB): Full webhook JSON response returned by external judges.
 * `submitted_at` (TIMESTAMP WITH TIME ZONE, DEFAULT NOW())
 * `judged_at` (TIMESTAMP WITH TIME ZONE, NULLABLE)
 * `judged_by` (VARCHAR(50), NULLABLE): Name of the worker instance that compiled the submission.
