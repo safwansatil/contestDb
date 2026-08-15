@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     submission_schema JSONB NOT NULL,               -- Mandatory: every task must declare its payload schema
     submission_cooldown_seconds INT DEFAULT 0 NOT NULL,
     task_order INT DEFAULT 0 NOT NULL,
+    webhook_url VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT chk_task_cooldown CHECK (submission_cooldown_seconds >= 0),
     CONSTRAINT chk_task_order CHECK (task_order >= 0)
@@ -107,6 +108,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS submission_schema JSONB;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS submission_cooldown_seconds INT DEFAULT 0 NOT NULL;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS task_order INT DEFAULT 0 NOT NULL;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS webhook_url VARCHAR(255);
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS chk_task_cooldown;
 ALTER TABLE tasks ADD CONSTRAINT chk_task_cooldown CHECK (submission_cooldown_seconds >= 0);
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS chk_task_order;

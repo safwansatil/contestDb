@@ -14,7 +14,7 @@ export function CreateContestModal({ onClose, onCreated }: { onClose: () => void
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const [f, setF] = useState({
-    title: '', ranking_strategy: 'SUM', judging_description: '',
+    title: '', ranking_strategy: 'SUM', custom_strategy: '', judging_description: '',
     start_time: iso(24), freeze_time: iso(26), end_time: iso(27),
     max_participants: '', invitation_code: '', allow_late_enrollment: true,
   })
@@ -27,8 +27,10 @@ export function CreateContestModal({ onClose, onCreated }: { onClose: () => void
     if (!(s <= fr && fr <= e)) return toast('Times must satisfy: start ≤ freeze ≤ end', 'err')
     setBusy(true)
     try {
+      const finalStrategy = f.ranking_strategy === 'Custom' ? f.custom_strategy.trim() : f.ranking_strategy
+      if (!finalStrategy) return toast('Custom strategy cannot be empty', 'err')
       const res = await contestApi.create({
-        title: f.title.trim(), ranking_strategy: f.ranking_strategy,
+        title: f.title.trim(), ranking_strategy: finalStrategy,
         start_time: s.toISOString(), freeze_time: fr.toISOString(), end_time: e.toISOString(),
         judging_description: f.judging_description.trim(),
         max_participants: f.max_participants ? Number(f.max_participants) : null,
@@ -50,7 +52,14 @@ export function CreateContestModal({ onClose, onCreated }: { onClose: () => void
         <input value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Spring Robotics Sprint" /></div>
       <div className="field"><label>Ranking strategy</label>
         <select value={f.ranking_strategy} onChange={(e) => set('ranking_strategy', e.target.value)}>
-          <option>SUM</option><option>MAX</option><option>ICPC</option><option>Custom</option></select></div>
+          <option>SUM</option><option>MAX</option><option>ICPC</option><option>Custom</option></select>
+        {f.ranking_strategy === 'SUM' && <p className="faint" style={{ margin: '4px 0 0', fontSize: 12 }}>Score is the sum of the participant's best scores across all tasks.</p>}
+        {f.ranking_strategy === 'MAX' && <p className="faint" style={{ margin: '4px 0 0', fontSize: 12 }}>Score is the single highest score achieved across all submissions.</p>}
+        {f.ranking_strategy === 'ICPC' && <p className="faint" style={{ margin: '4px 0 0', fontSize: 12 }}>Standings based on tasks solved, then penalty time.</p>}
+        {f.ranking_strategy === 'Custom' && (
+          <input style={{ marginTop: 8 }} value={f.custom_strategy} onChange={(e) => set('custom_strategy', e.target.value)} placeholder="Enter custom strategy name..." />
+        )}
+      </div>
       <div className="field"><label>Judging description</label>
         <textarea value={f.judging_description} onChange={(e) => set('judging_description', e.target.value)} placeholder="Explain how submissions are scored…" /></div>
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>

@@ -4,7 +4,7 @@
 -- ============================================================
 -- 1. Function to Claim Submissions from Queue (FOR UPDATE SKIP LOCKED)
 -- ============================================================
-DROP FUNCTION IF EXISTS claim_submission(VARCHAR);
+DROP FUNCTION IF EXISTS claim_submission(VARCHAR, INT, INT);
 CREATE OR REPLACE FUNCTION claim_submission(
     p_worker_id VARCHAR,
     p_lease_seconds INT DEFAULT 60,
@@ -14,7 +14,8 @@ RETURNS TABLE (
     submission_id INT,
     contest_id INT,
     user_id INT,
-    submission_data JSONB
+    submission_data JSONB,
+    webhook_url VARCHAR
 ) AS $$
 DECLARE
     v_sub_id INT;
@@ -71,9 +72,38 @@ BEGIN
         WHERE id = v_sub_id;
 
         RETURN QUERY
-        SELECT s.id, s.contest_id, s.user_id, s.submission_data
+        SELECT s.id, s.contest_id, s.user_id, s.submission_data, t.webhook_url
         FROM submissions s
+        LEFT JOIN tasks t ON s.task_id = t.id
         WHERE s.id = v_sub_id;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- 1a. Function to Record Submission Result from Webhook (Async Callback)
+-- ============================================================
+CREATE OR REPLACE FUNCTION update_submission_result_native(
+    p_submission_id INT,
+    p_score NUMERIC,
+    p_verdict VARCHAR,
+    p_judged_by VARCHAR
+)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE submissions
+    SET status = 'COMPLETED',
+        score = p_score,
+        verdict = p_verdict,
+        judged_at = CURRENT_TIMESTAMP,
+        judged_by = COALESCE(p_judged_by, judged_by),
+        lease_expires_at = NULL,
+        last_error = NULL
+    WHERE id = p_submission_id
+      AND status = 'JUDGING';
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Submission not found or not in JUDGING state.';
     END IF;
 END;
 $$ LANGUAGE plpgsql;
@@ -601,7 +631,8 @@ CREATE OR REPLACE FUNCTION add_task_native(
     p_max_score NUMERIC,
     p_submission_schema JSONB,
     p_submission_cooldown_seconds INT DEFAULT 0,
-    p_task_order INT DEFAULT 0
+    p_task_order INT DEFAULT 0,
+    p_webhook_url VARCHAR DEFAULT NULL
 ) RETURNS INT AS $$
 DECLARE
     v_role VARCHAR;
@@ -616,9 +647,9 @@ BEGIN
     END IF;
 
     INSERT INTO tasks (contest_id, title, description, max_score,
-                       submission_schema, submission_cooldown_seconds, task_order)
+                       submission_schema, submission_cooldown_seconds, task_order, webhook_url)
     VALUES (p_contest_id, p_title, p_description, p_max_score,
-            p_submission_schema, p_submission_cooldown_seconds, p_task_order)
+            p_submission_schema, p_submission_cooldown_seconds, p_task_order, p_webhook_url)
     RETURNING id INTO v_task_id;
 
     RETURN v_task_id;
@@ -634,7 +665,8 @@ CREATE OR REPLACE FUNCTION update_task_native(
     p_max_score NUMERIC,
     p_submission_schema JSONB,
     p_submission_cooldown_seconds INT DEFAULT 0,
-    p_task_order INT DEFAULT 0
+    p_task_order INT DEFAULT 0,
+    p_webhook_url VARCHAR DEFAULT NULL
 ) RETURNS VOID AS $$
 DECLARE
     v_contest_id INT;
@@ -662,7 +694,8 @@ BEGIN
         max_score = p_max_score,
         submission_schema = p_submission_schema,
         submission_cooldown_seconds = p_submission_cooldown_seconds,
-        task_order = p_task_order
+        task_order = p_task_order,
+        webhook_url = p_webhook_url
     WHERE id = p_task_id;
 END;
 $$ LANGUAGE plpgsql;

@@ -6,6 +6,21 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.8.0] - 2026-08-15 (Async Webhook Execution Delegation)
+### Added
+* **Webhook URL Support for Tasks** — Added `webhook_url VARCHAR(255)` column to the `tasks` table in [init.sql](database/init.sql). Tasks can now specify an external webhook URL for asynchronous judging.
+* **Database-Native Async Result Callback** — Added `update_submission_result_native` function to [procedures.sql](database/procedures.sql) allowing async webhook judges to write back scores and verdicts safely.
+* **API Webhook Callback Endpoint** — Created `POST /submissions/{id}/callback` in [main.py](backend/app/main.py) to receive execution results from external evaluator webhook endpoints.
+* **Asynchronous Execution Dispatch** — Refactored `worker.py` to seamlessly dispatch submissions to external webhooks (if a `webhook_url` is configured) while keeping the mock local fallback evaluation intact for regular tasks.
+* **Webhook Automation Tests** — Wrote explicit E2E tests in `database/tests/test_webhook_async.py` covering the full asynchronous execution cycle from enqueue to callback.
+
+### Changed
+* Updated `TaskCreateRequest` in [main.py](backend/app/main.py) to accept an optional `webhook_url`.
+* Updated `add_task_native` and `update_task_native` in [procedures.sql](database/procedures.sql) to receive and store `webhook_url`.
+* Updated `claim_submission` to return the associated task's `webhook_url` to the polling worker.
+
+---
+
 ## [0.7.1] - 2026-08-06 (Security Hardening: Leaderboard Freeze & Submission Timing)
 ### Fixed
 * **[#15] Privilege Escalation via Type Coercion in `get_user_contest_history`** — The `get_user_contest_history` PL/pgSQL function in [procedures.sql](database/procedures.sql) called `get_leaderboard(ec.contest_id, TRUE)` with a literal boolean `TRUE` as the viewer ID. PostgreSQL silently casts `TRUE` to integer `1`, making every call to `/users/{id}/history` treat user ID 1 (sayma) as the viewer — thereby granting admin-level (unfreeze-bypassing) leaderboard access to every user's contest history. Fixed by changing `TRUE` to `NULL`, which instructs `get_leaderboard` to use the public/frozen visibility path for all history lookups. This is correct: contest history always shows final public standings.

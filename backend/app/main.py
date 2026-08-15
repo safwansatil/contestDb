@@ -131,6 +131,7 @@ class TaskCreateRequest(BaseModel):
     )
     submission_cooldown_seconds: int = Field(0, ge=0)
     task_order: int = Field(0, ge=0)
+    webhook_url: Optional[str] = Field(None, description="Optional external judge webhook URL")
     tags: List[str] = Field(default_factory=list)
 
 class EnrollRequest(BaseModel):
@@ -552,12 +553,13 @@ async def create_task(contest_id: int, payload: TaskCreateRequest, current_user:
             try:
                 import json as _json
                 await cur.execute(
-                    "SELECT add_task_native(%s, %s, %s, %s, %s, %s::jsonb, %s, %s);",
+                    "SELECT add_task_native(%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s);",
                     (
                         contest_id, user_id, payload.title, payload.description, payload.max_score,
                         _json.dumps(payload.submission_schema),
                         payload.submission_cooldown_seconds,
-                        payload.task_order
+                        payload.task_order,
+                        payload.webhook_url
                     )
                 )
                 row = await cur.fetchone()
@@ -589,12 +591,13 @@ async def update_task(task_id: int, payload: TaskCreateRequest, current_user: Di
             try:
                 import json as _json
                 await cur.execute(
-                    "SELECT update_task_native(%s, %s, %s, %s, %s, %s::jsonb, %s, %s);",
+                    "SELECT update_task_native(%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s);",
                     (
                         task_id, user_id, payload.title, payload.description, payload.max_score,
                         _json.dumps(payload.submission_schema),
                         payload.submission_cooldown_seconds,
-                        payload.task_order
+                        payload.task_order,
+                        payload.webhook_url
                     )
                 )
                 await cur.execute(
@@ -790,6 +793,30 @@ async def create_submission(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=error_message,
                 )
+
+class WebhookCallbackRequest(BaseModel):
+    score: float
+    verdict: str
+    judged_by: str = "webhook"
+
+@app.post("/submissions/{submission_id}/callback")
+async def submission_webhook_callback(submission_id: int, payload: WebhookCallbackRequest):
+    """
+    Callback endpoint for external judges to report evaluation results async.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT update_submission_result_native(%s, %s, %s, %s);",
+                    (submission_id, payload.score, payload.verdict, payload.judged_by)
+                )
+                await conn.commit()
+                return {"message": "Submission successfully judged by webhook."}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error recording webhook callback for sub #{submission_id}: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/contests/{contest_id}/leaderboard")
 async def get_contest_leaderboard(

@@ -89,32 +89,47 @@ def main():
                     row = cur.fetchone()
                     
                     if row:
-                        sub_id, contest_id, user_id, sub_data = row
+                        sub_id, contest_id, user_id, sub_data, webhook_url = row
                         logger.info(f"Locked submission #{sub_id} from contest #{contest_id} by user #{user_id}")
                         
                         try:
-                            # Evaluate submission based on JSONB payload
-                            score, verdict = evaluate_submission(sub_data)
-                            
-                            # Write standardized score and verdict back
-                            cur.execute(
-                                """
-                                UPDATE submissions
-                                SET status = 'COMPLETED',
-                                    score = %s,
-                                    verdict = %s,
-                                    judged_at = CURRENT_TIMESTAMP,
-                                    lease_expires_at = NULL,
-                                    last_error = NULL
-                                WHERE id = %s
-                                  AND status = 'JUDGING'
-                                  AND judged_by = %s
-                                  AND lease_expires_at > CURRENT_TIMESTAMP;
-                                """,
-                                (score, verdict, sub_id, WORKER_ID),
-                            )
+                            if webhook_url:
+                                import requests
+                                logger.info(f"Dispatching submission #{sub_id} to webhook: {webhook_url}")
+                                callback_url = f"http://127.0.0.1:8000/submissions/{sub_id}/callback"
+                                payload = {
+                                    "submission_id": sub_id,
+                                    "contest_id": contest_id,
+                                    "user_id": user_id,
+                                    "submission_data": sub_data,
+                                    "callback_url": callback_url
+                                }
+                                response = requests.post(webhook_url, json=payload, timeout=5)
+                                response.raise_for_status()
+                                logger.info(f"Successfully dispatched submission #{sub_id} to webhook.")
+                            else:
+                                # Evaluate submission based on JSONB payload
+                                score, verdict = evaluate_submission(sub_data)
+                                
+                                # Write standardized score and verdict back
+                                cur.execute(
+                                    """
+                                    UPDATE submissions
+                                    SET status = 'COMPLETED',
+                                        score = %s,
+                                        verdict = %s,
+                                        judged_at = CURRENT_TIMESTAMP,
+                                        lease_expires_at = NULL,
+                                        last_error = NULL
+                                    WHERE id = %s
+                                      AND status = 'JUDGING'
+                                      AND judged_by = %s
+                                      AND lease_expires_at > CURRENT_TIMESTAMP;
+                                    """,
+                                    (score, verdict, sub_id, WORKER_ID),
+                                )
 
-                            logger.info(f"Successfully judged submission #{sub_id}. Result: Score={score}, Verdict={verdict}")
+                                logger.info(f"Successfully judged submission #{sub_id}. Result: Score={score}, Verdict={verdict}")
                         
                         except Exception as eval_err:
                             logger.error(

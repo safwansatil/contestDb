@@ -8,6 +8,7 @@ import { fmtDate, fmtRel, timelineStatus, isFrozen, statusColor, isAdmin } from 
 import { useAuth } from '../lib/auth'
 import { useToast } from '../lib/toast'
 import { Page, Loader, Empty, Pill, RankBadge, Avatar, Modal, Spinner } from '../components/ui'
+import { CreateTaskModal } from '../components/CreateTaskModal'
 import { SubmitModal } from '../components/SubmitModal'
 import { IconSeal, IconEye, IconArrowLeft } from '../components/icons'
 
@@ -109,7 +110,7 @@ export function ContestDetail() {
 
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           {tab === 'overview' && <Overview c={c} tasks={tasks} admin={admin} onFullLb={() => setTab('leaderboard')} />}
-          {tab === 'tasks' && <Tasks c={c} tasks={tasks} admin={admin} enrolled={enrolled} tstat={tstat} onSubmit={() => setSubmitting(true)} />}
+          {tab === 'tasks' && <Tasks c={c} tasks={tasks} admin={admin} enrolled={enrolled} tstat={tstat} onSubmit={() => setSubmitting(true)} onRefresh={load} />}
           {tab === 'leaderboard' && <Leaderboard c={c} admin={admin} frozen={frozen} meId={user?.id} />}
           {tab === 'stats' && <Stats c={c} />}
           {tab === 'announcements' && <Announcements c={c} admin={admin} />}
@@ -236,10 +237,15 @@ function Overview({ c, tasks, admin, onFullLb }: { c: Contest; tasks: Task[]; ad
 }
 
 /* ---------------- Tasks ---------------- */
-function Tasks({ c, tasks, admin, enrolled, tstat, onSubmit }: { c: Contest; tasks: Task[]; admin: boolean; enrolled: boolean; tstat: string; onSubmit: () => void }) {
+function Tasks({ c, tasks, admin, enrolled, tstat, onSubmit, onRefresh }: { c: Contest; tasks: Task[]; admin: boolean; enrolled: boolean; tstat: string; onSubmit: () => void; onRefresh: () => void }) {
+  const [creating, setCreating] = useState(false)
   const canSubmit = enrolled && tstat === 'ONGOING' && c.status === 'ACTIVE'
   return (
     <div className="grid">
+      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
+        <h3 style={{ margin: 0 }}>Tasks</h3>
+        {admin && <button className="btn primary sm" onClick={() => setCreating(true)}>Add New Task</button>}
+      </div>
       {tasks.length === 0 ? <div className="glass"><Empty icon="◲">No tasks published yet.</Empty></div> : (
         <div className="glass" style={{ overflow: 'hidden' }}>
           {tasks.map((t) => (
@@ -266,7 +272,7 @@ function Tasks({ c, tasks, admin, enrolled, tstat, onSubmit }: { c: Contest; tas
           ))}
         </div>
       )}
-      {admin && <div className="notice">Task creation & editing endpoints are wired (POST/PUT/DELETE /tasks) — add a builder here as a next step.</div>}
+      {creating && <CreateTaskModal contestId={c.id} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); onRefresh(); }} />}
     </div>
   )
 }

@@ -76,6 +76,7 @@ erDiagram
         jsonb submission_schema
         int submission_cooldown_seconds
         int task_order
+        varchar webhook_url
         timestamp_with_tz created_at
     }
 
