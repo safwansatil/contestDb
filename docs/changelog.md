@@ -6,6 +6,12 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 
 ---
 
+## [0.9.1] - 2026-08-15 (Contests Table Schema Hotfix)
+### Fixed
+* Added `created_at` timestamp column to the `contests` table in `database/init.sql` to resolve a crashing SQL query in `/dev/contests` that prevented the developer dashboard from loading contests.
+
+---
+
 ## [0.9.0] - 2026-08-15 (Developer Dashboard & Contest Format Pivot)
 ### Added
 * Added `is_developer` flag to the `users` table to permanently distinguish system administrators from regular users.

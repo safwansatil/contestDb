@@ -25,7 +25,7 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
       if (isLogin) await login(username.trim(), password)
       else await signup(username.trim(), password)
       toast(isLogin ? `Welcome back, ${username}` : `Account created — welcome, ${username}`)
-      nav('/app')
+      nav('/')
     } catch (err) {
       toast(apiError(err), 'err')
     } finally { setBusy(false) }

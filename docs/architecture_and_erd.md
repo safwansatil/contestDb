@@ -58,6 +58,7 @@ erDiagram
         varchar invitation_code
         int max_participants
         boolean allow_late_enrollment
+        timestamp_with_tz created_at
     }
 
     enrollments {
@@ -156,6 +157,7 @@ erDiagram
 * `invitation_code` (VARCHAR(50), NULLABLE): Invitation code needed to register for private contests.
 * `max_participants` (INT, NULLABLE): Enrollment cap. `NULL` = unlimited. When set, `enroll_in_contest()` uses `FOR UPDATE` locking to prevent race conditions at capacity.
 * `allow_late_enrollment` (BOOLEAN, DEFAULT TRUE, NOT NULL): If `FALSE`, enrollment is rejected after `start_time` has passed.
+* `created_at` (TIMESTAMP WITH TIME ZONE, DEFAULT NOW()): Contest creation timestamp.
 * *Constraints*: `chk_contest_times` checks that `freeze_time >= start_time AND end_time >= freeze_time`, `chk_contest_status` validates status values, and `chk_max_participants` ensures `max_participants > 0` when set.
 
 #### `enrollments`

@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS contests (
     invitation_code VARCHAR(50),
     max_participants INT,                           -- NULL = unlimited; > 0 enforced by CHECK
     allow_late_enrollment BOOLEAN DEFAULT TRUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT chk_contest_times CHECK (freeze_time >= start_time AND end_time >= freeze_time),
     CONSTRAINT chk_contest_status CHECK (status IN ('PENDING_APPROVAL', 'ACTIVE', 'COMPLETED')),
     CONSTRAINT chk_max_participants CHECK (max_participants IS NULL OR max_participants > 0)
@@ -44,6 +45,7 @@ ALTER TABLE contests ADD COLUMN IF NOT EXISTS judging_description TEXT;
 ALTER TABLE contests ADD COLUMN IF NOT EXISTS invitation_code VARCHAR(50);
 ALTER TABLE contests ADD COLUMN IF NOT EXISTS max_participants INT;
 ALTER TABLE contests ADD COLUMN IF NOT EXISTS allow_late_enrollment BOOLEAN DEFAULT TRUE NOT NULL;
+ALTER TABLE contests ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
 ALTER TABLE contests DROP CONSTRAINT IF EXISTS chk_contest_status;
 ALTER TABLE contests ADD CONSTRAINT chk_contest_status CHECK (status IN ('PENDING_APPROVAL', 'ACTIVE', 'COMPLETED'));
 ALTER TABLE contests DROP CONSTRAINT IF EXISTS chk_max_participants;

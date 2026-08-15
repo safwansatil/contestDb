@@ -220,7 +220,8 @@ async def signup(payload: AuthRequest):
                     "user": {
                         "id": user_id,
                         "username": username,
-                        "created_at": created_at
+                        "created_at": created_at,
+                        "is_developer": False
                     }
                 }
             except Exception as e:
@@ -250,13 +251,19 @@ async def login(payload: AuthRequest):
                 )
             
             user_id, username = row
+            
+            await cur.execute("SELECT is_developer FROM users WHERE id = %s", (user_id,))
+            is_dev_row = await cur.fetchone()
+            is_developer = is_dev_row[0] if is_dev_row else False
+            
             token = create_access_token(user_id, username)
             return {
                 "access_token": token,
                 "token_type": "bearer",
                 "user": {
                     "id": user_id,
-                    "username": username
+                    "username": username,
+                    "is_developer": is_developer
                 }
             }
 
