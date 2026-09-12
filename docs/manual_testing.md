@@ -560,3 +560,18 @@ The suite verifies:
 - Only contests where the user is a participant are returned.
 - Recent submissions belong to the authenticated user.
 - At most five recent submissions are returned.
+
+## Manager Dashboard — Issue #46
+
+### Requirements
+
+- FastAPI must be running at `http://127.0.0.1:8000`.
+- `database/procedures.sql` and `database/permissions.sql` must be applied.
+- The database must contain the seeded users.
+
+### Test the database function
+
+The seeded user `sayma`, user ID `1`, is a contest HOST:
+
+```sql
+SELECT jsonb_pretty(get_manager_dashboard(1));

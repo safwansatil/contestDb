@@ -925,6 +925,46 @@ async def get_participant_dashboard_api(
                 )
 
             return row[0]
+        # Manager Dashboard Endpoint
+@app.get("/dashboards/manager")
+async def get_manager_dashboard_api(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Return dashboard information for contests hosted by the
+    authenticated user.
+    """
+    user_id = current_user["user_id"]
+
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT get_manager_dashboard(%s);",
+                    (user_id,)
+                )
+
+                row = await cur.fetchone()
+
+                if not row or row[0] is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Could not generate manager dashboard"
+                    )
+
+                return row[0]
+
+            except HTTPException:
+                raise
+
+            except Exception as error:
+                logger.error(
+                    f"Error generating manager dashboard: {error}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(error)
+                )
 
 # User Profile & Activity Statistics Endpoints
 @app.get("/users/{user_id}/profile")
