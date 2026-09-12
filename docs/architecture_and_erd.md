@@ -256,3 +256,17 @@ Authenticated client
 6. FastAPI returns the JSONB result without calculating dashboard statistics in Python.
 
 A user who has not hosted any contests receives zero summary values and empty arrays. The endpoint does not return `403` because any authenticated user may open the manager context.
+
+| `get_moderator_dashboard(p_user_id)` | Returns a JSONB dashboard for contests where the user has the `MODERATOR` role, including live monitoring data and recent submissions |
+
+### Moderator Dashboard Request Flow
+
+1. The client sends `GET /dashboards/moderator` with a valid JWT.
+2. FastAPI validates the JWT and obtains the authenticated `user_id`.
+3. FastAPI calls `get_moderator_dashboard(user_id)`.
+4. PostgreSQL selects only contests where the user has the `MODERATOR` enrollment role.
+5. PostgreSQL calculates contest counts, participant counts, submission counts, leaderboard freeze state, and recent submission activity.
+6. PostgreSQL returns the dashboard as one JSONB object.
+7. FastAPI returns the database result without calculating dashboard statistics in Python.
+
+The dashboard does not currently return reported or flagged submissions because moderation-report storage is tracked separately by issues #32 and #35.

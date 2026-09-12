@@ -5,6 +5,14 @@ All notable changes to the ContestDB project will be documented in this file.
 This project adheres to Semantic Versioning and matches commits/tasks with GitHub Issues.
 
 ---
+## [0.10.0] - 2026-09-13 (Moderator Dashboard)
+
+### Added
+
+- **[#47] Database-Native Moderator Dashboard** — Added `get_moderator_dashboard(p_user_id)` to `database/procedures.sql`. It returns moderator summary statistics, ongoing contests, upcoming contests, leaderboard freeze state, and the ten most recent submissions from contests where the user has the `MODERATOR` role.
+- **Authenticated Moderator Dashboard Endpoint** — Added `GET /dashboards/moderator` to `backend/app/main.py`. The endpoint derives the user identity from the authenticated JWT.
+- **Moderator Dashboard Integration Tests** — Added `database/tests/test_moderator_dashboard.py`, covering authentication, response structure, role isolation, dynamic moderator assignments, recent-submission ordering, and live-monitor fields.
+
 ## [0.9.0] - 2026-09-13 (Manager Dashboard)
 
 ### Added

@@ -925,7 +925,7 @@ async def get_participant_dashboard_api(
                 )
 
             return row[0]
-        # Manager Dashboard Endpoint
+# Manager Dashboard Endpoint
 @app.get("/dashboards/manager")
 async def get_manager_dashboard_api(
     current_user: Dict[str, Any] = Depends(get_current_user)
@@ -960,6 +960,46 @@ async def get_manager_dashboard_api(
             except Exception as error:
                 logger.error(
                     f"Error generating manager dashboard: {error}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(error)
+                )
+# Moderator Dashboard Endpoint
+@app.get("/dashboards/moderator")
+async def get_moderator_dashboard_api(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Return dashboard information for contests moderated by the
+    authenticated user.
+    """
+    user_id = current_user["user_id"]
+
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT get_moderator_dashboard(%s);",
+                    (user_id,)
+                )
+
+                row = await cur.fetchone()
+
+                if not row or row[0] is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Could not generate moderator dashboard"
+                    )
+
+                return row[0]
+
+            except HTTPException:
+                raise
+
+            except Exception as error:
+                logger.error(
+                    f"Error generating moderator dashboard: {error}"
                 )
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

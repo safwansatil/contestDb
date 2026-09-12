@@ -575,3 +575,12 @@ The seeded user `sayma`, user ID `1`, is a contest HOST:
 
 ```sql
 SELECT jsonb_pretty(get_manager_dashboard(1));
+
+## Moderator Dashboard — Issue #47
+
+### Test the database function
+
+The seeded user `nondiny`, user ID `2`, is a moderator:
+
+```sql
+SELECT jsonb_pretty(get_moderator_dashboard(2));
