@@ -242,3 +242,17 @@ Authenticated client
 | `get_contest_submission_timeline(contest_id, as_admin)` | date_bin bucketed timeline |
 | `get_participant_score_progression(contest_id, user_id)` | Cumulative score timeline |
 | get_participant_dashboard(p_user_id) | Returns the authenticated participant's summary, ongoing contests, upcoming contests, ranks, scores, and five most recent submissions as JSONB |
+
+
+| `get_manager_dashboard(p_user_id)` | Returns a JSONB manager dashboard containing summary statistics, ongoing contests, upcoming contests, and recent contests where the user has the `HOST` role |
+
+### Manager Dashboard Request Flow
+
+1. The client sends `GET /dashboards/manager` with a valid JWT.
+2. FastAPI verifies the token and obtains the authenticated `user_id`.
+3. FastAPI calls `get_manager_dashboard(user_id)`.
+4. PostgreSQL selects only contests where the user has the `HOST` enrollment role.
+5. PostgreSQL returns summary statistics and contest collections as one JSONB object.
+6. FastAPI returns the JSONB result without calculating dashboard statistics in Python.
+
+A user who has not hosted any contests receives zero summary values and empty arrays. The endpoint does not return `403` because any authenticated user may open the manager context.

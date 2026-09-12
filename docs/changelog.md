@@ -5,6 +5,18 @@ All notable changes to the ContestDB project will be documented in this file.
 This project adheres to Semantic Versioning and matches commits/tasks with GitHub Issues.
 
 ---
+## [0.9.0] - 2026-09-13 (Manager Dashboard)
+
+### Added
+
+- **[#46] Database-Native Manager Dashboard** — Added `get_manager_dashboard(p_user_id)` to `database/procedures.sql`. It returns summary statistics, ongoing contests, upcoming contests, and the five most recent contests hosted by the authenticated user.
+- **Authenticated Manager Dashboard Endpoint** — Added `GET /dashboards/manager` to `backend/app/main.py`. The endpoint derives the manager identity exclusively from the authenticated JWT.
+- **Manager Dashboard Integration Tests** — Added `database/tests/test_manager_dashboard.py`, covering authentication, response structure, HOST-role isolation, empty dashboard behavior, and the recent-contest limit and ordering.
+
+### Fixed
+
+- Added explicit drops for older `claim_submission(...)` and `search_contests_native(...)` signatures so PostgreSQL can safely recreate functions whose table return structures changed.
+
 
 ## [0.8.0] - 2026-08-06 (Participant Dashboard)
 
