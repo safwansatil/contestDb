@@ -566,10 +566,6 @@ function CtfChallenge({ contest, task, canSubmit }: { contest: Contest; task: Ta
   const [flag, setFlag] = useState(''); const [phase, setPhase] = useState<'ready' | 'queued' | 'correct' | 'wrong'>('ready')
   const toast = useToast()
   const { user } = useAuth()
-  const [searchParams] = useSearchParams()
-  const developerMode =
-    searchParams.get('dev') === '1' &&
-    user?.is_developer === true
   const brief = CTF_BRIEFS[task.task_order] || { category: 'General', time: '5 min', mission: task.description, evidence: 'No extra evidence supplied.', hint: 'Read the task statement closely.' }
   async function waitForVerdict(submissionId: number) { for (let i = 0; i < 15; i++) { await new Promise((resolve) => setTimeout(resolve, 1200)); try { const history = await userApi.history(user!.id); const found = history.submissions_history.find((item: { submission_id: number; verdict: string | null }) => item.submission_id === submissionId); if (found?.verdict) { const correct = found.verdict === 'CORRECT'; setPhase(correct ? 'correct' : 'wrong'); toast(correct ? `${task.title} solved — ${task.max_score} points` : 'Not this flag. Review the evidence and try again after the cooldown.', correct ? 'info' : 'err'); return } } catch { /* worker may still be processing */ } } setPhase('ready'); toast('Judging is taking longer than expected. Check your profile shortly.', 'info') }
   async function submitFlag() { if (!/^CTFDB\{.+\}$/.test(flag.trim())) return toast('Use the exact CTFDB{...} flag format.', 'err'); if (!canSubmit) return toast('Enroll or wait for the contest to become active.', 'err'); setPhase('queued'); try { const result = await submissionApi.create(contest.id, task.id, { flag: flag.trim() }); toast(`${task.title} entered the judge queue`, 'info'); await waitForVerdict(result.submission_id) } catch (e) { setPhase('ready'); toast(apiError(e), 'err') } }
@@ -855,15 +851,32 @@ function Manage({ c, onChange }: { c: Contest; onChange: () => void }) {
             <Pill className={m.role === 'HOST' ? 'tag-gold' : m.role === 'MODERATOR' ? 'tag-pending' : 'tag-neutral'}>{m.role}</Pill>
             {m.role !== 'HOST' && (
               <div className="row" style={{ gap: 6 }}>
-               <RoleSelect
-  c={c}
-  m={m}
-  moderatorCapacityReached={
-    moderatorCapacityReached
-  }
-  onDone={load}
-/>
-                <button className="btn danger sm" onClick={() => setKicking(m)}>Kick</button>
+                {viewerIsHost && (
+                  <RoleSelect
+                    c={c}
+                    m={m}
+                    moderatorCapacityReached={moderatorCapacityReached}
+                    onDone={load}
+                  />
+                )}
+
+                {viewerIsModerator && m.role === 'PARTICIPANT' && (
+                  <button
+                    className="btn danger sm"
+                    onClick={() => setKicking(m)}
+                  >
+                    Kick
+                  </button>
+                )}
+
+                {viewerIsHost && (
+                  <button
+                    className="btn danger sm"
+                    onClick={() => setKicking(m)}
+                  >
+                    Kick
+                  </button>
+                )}
               </div>
             )}
           </div>
