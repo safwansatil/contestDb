@@ -143,13 +143,48 @@ export function ContestDetail() {
 /* ---------------- Countdown ---------------- */
 function Countdown({ target }: { target: string }) {
   const [now, setNow] = useState(Date.now())
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [])
-  const d = Math.max(0, new Date(target).getTime() - now)
-  const h = Math.floor(d / 3600e3), m = Math.floor((d % 3600e3) / 60e3), s = Math.floor((d % 60e3) / 1000)
-  const unit = (v: number, l: string) => (
-    <div className="cd-unit"><b>{String(v).padStart(2, '0')}</b><small>{l}</small></div>
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now())
+    }, 1000)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [])
+
+  const targetTime = new Date(target).getTime()
+  const difference = Math.max(0, targetTime - now)
+
+  const hours = Math.floor(difference / 3_600_000)
+  const minutes = Math.floor(
+    (difference % 3_600_000) / 60_000
   )
-  return <div className="contest-countdown">{unit(h, 'hrs')}{unit(m, 'min')}{unit(s, 'sec')}</div>
+  const seconds = Math.floor(
+    (difference % 60_000) / 1_000
+  )
+
+  const unit = (
+    value: number,
+    label: string,
+  ) => (
+    <div className="cd-unit">
+      <b>{String(value).padStart(2, '0')}</b>
+      <small>{label}</small>
+    </div>
+  )
+
+  return (
+    <div
+      className="contest-countdown"
+      aria-label={`Time remaining: ${hours} hours, ${minutes} minutes and ${seconds} seconds`}
+    >
+      {unit(hours, 'hrs')}
+      {unit(minutes, 'min')}
+      {unit(seconds, 'sec')}
+    </div>
+  )
 }
 
 /* ---------------- Timeline ---------------- */
