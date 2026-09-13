@@ -32,13 +32,12 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
   }
 
   return (
-    <div style={{ minHeight: 'calc(100vh - 62px)', display: 'grid', placeItems: 'center', padding: 24 }}>
-      <motion.form onSubmit={submit} className="glass glass-strong pad-lg" style={{ width: '100%', maxWidth: 410, padding: 34 }}
+    <div className="auth-spread">
+      <aside className="auth-poster"><span className="label" style={{color:'inherit'}}>ContestDB / Member file</span><h1>{isLogin ? <>WELCOME<br/>BACK.</> : <>YOUR<br/>NEXT<br/>MOVE.</>}</h1><p className="mono" style={{fontSize:11,lineHeight:1.8}}>THE BOARD IS WAITING.<br/>YOUR RECORD STARTS HERE.</p></aside>
+      <div className="auth-form"><motion.form onSubmit={submit} className="glass glass-strong"
         initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.4 }}>
-        <div className="mark" style={{ width: 48, height: 48, borderRadius: 14, fontSize: 22, marginBottom: 18,
-          display: 'grid', placeItems: 'center', fontFamily: 'var(--mono)', fontWeight: 900,
-          background: 'linear-gradient(145deg,var(--gold-2),var(--gold-deep))', color: '#231703' }}>C</div>
-        <h1 style={{ fontSize: 23 }}>{isLogin ? 'Welcome back' : 'Create your account'}</h1>
+        <span className="label">Member access / 01</span>
+        <h1>{isLogin ? 'Welcome back' : 'Create your account'}</h1>
         <p className="dim" style={{ fontSize: 13.5, margin: '7px 0 24px' }}>
           {isLogin ? 'Sign in to enroll, submit and climb the board.' : 'Pick a username to get started.'}
         </p>
@@ -62,7 +61,7 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
         <div className="notice blue center" style={{ marginTop: 20, justifyContent: 'center' }}>
           Try the seed account <span className="k">sayma</span> / <span className="k">password123</span>
         </div>
-      </motion.form>
+      </motion.form></div>
     </div>
   )
 }
