@@ -18,6 +18,7 @@ import { submissionApi } from '../lib/api'
 const TABS = (c: Contest, admin: boolean) => [
   ['overview', 'Overview', null],
   ...((c.visibility.show_task_list || admin ? [['tasks', 'Tasks', null]] : []) as [string, string, null][]),
+  ['submissions', 'Submissions', null],
   ...((c.visibility.show_leaderboard || admin ? [['leaderboard', 'Leaderboard', null]] : []) as [string, string, null][]),
   ...((c.visibility.show_statistics || admin ? [['stats', 'Statistics', null]] : []) as [string, string, null][]),
   ['announcements', 'Announcements', null],
@@ -58,7 +59,16 @@ export function ContestDetail() {
   function primaryAction() {
     if (admin) return { label: '⚙ Manage contest', fn: () => setTab('manage') }
     if (enrolled) {
-      if (tstat === 'ONGOING' && c!.status === 'ACTIVE') return { label: '↑ Submit solution', fn: () => setSubmitting(true) }
+      if (
+        tstat === 'ONGOING' &&
+        c!.status === 'ACTIVE' &&
+        !['chess', 'icpc'].includes(c!.contest_type)
+      ) {
+        return {
+          label: '↑ Submit solution',
+          fn: () => setSubmitting(true)
+        }
+      }
       return { label: '✓ Enrolled', fn: () => {}, disabled: true }
     }
     if (tstat === 'COMPLETED') return { label: 'Contest ended', fn: () => {}, disabled: true }
@@ -114,6 +124,7 @@ export function ContestDetail() {
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           {tab === 'overview' && <Overview c={c} tasks={tasks} admin={admin} onFullLb={() => setTab('leaderboard')} />}
           {tab === 'tasks' && <Tasks c={c} tasks={tasks} admin={admin} enrolled={enrolled} tstat={tstat} onSubmit={() => setSubmitting(true)} onRefresh={load} />}
+          {tab === 'submissions' && <Submissions contest={c} />}
           {tab === 'leaderboard' && <Leaderboard c={c} admin={admin} frozen={frozen} meId={user?.id} />}
           {tab === 'stats' && <Stats c={c} />}
           {tab === 'announcements' && <Announcements c={c} admin={admin} />}
@@ -138,7 +149,7 @@ function Countdown({ target }: { target: string }) {
   const unit = (v: number, l: string) => (
     <div className="cd-unit"><b>{String(v).padStart(2, '0')}</b><small>{l}</small></div>
   )
-  return <div className="countdown">{unit(h, 'hrs')}{unit(m, 'min')}{unit(s, 'sec')}</div>
+  return <div className="contest-countdown">{unit(h, 'hrs')}{unit(m, 'min')}{unit(s, 'sec')}</div>
 }
 
 /* ---------------- Timeline ---------------- */
@@ -327,26 +338,180 @@ function IcpcArena({ contest, tasks, canSubmit, admin, onAddTask }: { contest: C
 }
 
 function ChessArena({ contest, tasks, canSubmit }: { contest: Contest; tasks: Task[]; canSubmit: boolean }) {
-  return <div><div className="notice" style={{ marginBottom: 16 }}>♟ Puzzle arena — find checkmate directly on the board. A completed mating line is sent to the judge queue.</div><div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))' }}>{tasks.map((task) => <ChessLevel key={task.id} contest={contest} task={task} canSubmit={canSubmit} />)}</div></div>
+  return <div><div className="notice" style={{ marginBottom: 16 }}>♟ Puzzle arena — find checkmate directly on the board. A completed mating line is sent to the judge queue.</div><div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', rowGap: '5px' }}>{tasks.map((task) => <ChessLevel key={task.id} contest={contest} task={task} canSubmit={canSubmit} />)}</div></div>
 }
 
-function ChessLevel({ contest, task, canSubmit }: { contest: Contest; task: Task; canSubmit: boolean }) {
-  const [game, setGame] = useState(() => new Chess('7k/6pp/8/7Q/8/8/6PP/6K1 w - - 0 1'))
+function ChessLevel({
+  contest,
+  task,
+  canSubmit
+}: {
+  contest: Contest
+  task: Task
+  canSubmit: boolean
+}) {
+  const initialPosition = '7k/6pp/8/7Q/8/8/6PP/6K1 w - - 0 1'
+
+  const [game, setGame] = useState(() => new Chess(initialPosition))
   const [sent, setSent] = useState(false)
   const toast = useToast()
-  function onDrop({ sourceSquare, targetSquare }: { sourceSquare: string; targetSquare: string | null }) {
+
+  function onDrop({
+    sourceSquare,
+    targetSquare
+  }: {
+    sourceSquare: string
+    targetSquare: string | null
+  }) {
     if (!targetSquare || sent) return false
+
     const next = new Chess(game.fen())
-    const move = next.move({ from: sourceSquare, to: targetSquare, promotion: 'q' })
+
+    const move = next.move({
+      from: sourceSquare,
+      to: targetSquare,
+      promotion: 'q'
+    })
+
     if (!move) return false
+
+    // Only update the board.
+    // DO NOT submit automatically.
     setGame(next)
-    if (next.isCheckmate()) {
-      if (!canSubmit) toast('You found mate! Enroll or wait for the contest to become active to submit.', 'info')
-      else submissionApi.create(contest.id, task.id, { moves: next.history(), fen: next.fen() }).then(() => { setSent(true); toast(`${task.title} solved — sent to judge queue`) }).catch((e) => toast(apiError(e), 'err'))
-    }
+
     return true
   }
-  return <div className="glass pad"><div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}><div><div className="label">Level {task.task_order}</div><h3 style={{ margin: '4px 0' }}>{task.title}</h3></div><span className="pill tag-gold">{task.max_score} pts</span></div><p className="dim" style={{ fontSize: 13 }}>{task.description}</p><Chessboard options={{ position: game.fen(), onPieceDrop: onDrop, boardOrientation: 'white' }} /><div className="row" style={{ justifyContent: 'space-between', marginTop: 12 }}><span className="mono faint" style={{ fontSize: 11 }}>{game.history().join(' ') || 'White to move'}</span><button className="btn ghost sm" onClick={() => { setGame(new Chess('7k/6pp/8/7Q/8/8/6PP/6K1 w - - 0 1')); setSent(false) }}>Reset</button></div>{sent && <div className="notice" style={{ marginTop: 10 }}>✓ Checkmate found. Submission queued.</div>}</div>
+
+  async function submitChess() {
+    if (!canSubmit) {
+      return toast(
+        'Enroll or wait for the contest to become active.',
+        'err'
+      )
+    }
+
+    if (game.history().length === 0) {
+      return toast('Make a move before submitting.', 'err')
+    }
+
+    try {
+      const result = await submissionApi.create(
+        contest.id,
+        task.id,
+        {
+          moves: game.history(),
+          fen: game.fen()
+        }
+      )
+
+      setSent(true)
+
+      toast(
+        `${task.title} submitted — submission #${result.submission_id} queued for judging`,
+        'info'
+      )
+    } catch (e) {
+      toast(apiError(e), 'err')
+    }
+  }
+
+  function resetBoard() {
+    setGame(new Chess(initialPosition))
+    setSent(false)
+  }
+
+  return (
+    <div className="glass pad">
+      <div
+        className="row"
+        style={{
+          justifyContent: 'space-between',
+          marginBottom: 10
+        }}
+      >
+        <div>
+          <div className="label">
+            Level {task.task_order}
+          </div>
+
+          <h3 style={{ margin: '4px 0' }}>
+            {task.title}
+          </h3>
+        </div>
+
+        <span className="pill tag-gold">
+          {task.max_score} pts
+        </span>
+      </div>
+
+      <p
+        className="dim"
+        style={{ fontSize: 13 }}
+      >
+        {task.description}
+      </p>
+
+      <div className="chess-board-wrap">
+        <Chessboard
+          options={{
+            position: game.fen(),
+            onPieceDrop: onDrop,
+            boardOrientation: 'white'
+          }}
+        />
+</div>
+
+      <div
+        className="row"
+        style={{
+          justifyContent: 'space-between',
+          marginTop: 12
+        }}
+      >
+        <span
+          className="mono faint"
+          style={{ fontSize: 11 }}
+        >
+          {game.history().join(' ') || 'White to move'}
+        </span>
+
+        <div className="row">
+          <button
+            className="btn ghost sm"
+            onClick={resetBoard}
+          >
+            Reset
+          </button>
+
+          <button
+            className="btn primary sm"
+            disabled={sent}
+            onClick={submitChess}
+          >
+            {sent ? 'Submitted' : 'Submit'}
+          </button>
+        </div>
+      </div>
+
+      {game.isCheckmate() && !sent && (
+        <div
+          className="notice"
+          style={{ marginTop: 10 }}
+        >
+          ✓ Checkmate found. Click Submit to send your solution.
+        </div>
+      )}
+
+      {sent && (
+        <div
+          className="notice"
+          style={{ marginTop: 10 }}
+        >
+          ✓ Submission queued for judging.
+        </div>
+      )}
+    </div>
+  )
 }
 
 function CtfArena({ contest, tasks, canSubmit }: { contest: Contest; tasks: Task[]; canSubmit: boolean }) {
@@ -359,6 +524,89 @@ function CtfChallenge({ contest, task, canSubmit }: { contest: Contest; task: Ta
   const toast = useToast()
   async function submitFlag() { if (!flag.trim()) return toast('Enter a flag first', 'err'); if (!canSubmit) return toast('Enroll or wait for the contest to become active.', 'err'); try { await submissionApi.create(contest.id, task.id, { flag: flag.trim() }); setSent(true); toast(`${task.title} queued for judging`) } catch (e) { toast(apiError(e), 'err') } }
   return <div className="glass pad"><div className="label">Challenge {task.task_order}</div><h3 style={{ margin: '5px 0 9px' }}>{task.title}</h3><p className="dim" style={{ minHeight: 58, fontSize: 13 }}>{task.description}</p><div className="field" style={{ margin: 0 }}><label>Flag</label><input value={flag} onChange={(e) => setFlag(e.target.value)} placeholder="CTFDB{...}" /></div><button className="btn primary block" style={{ marginTop: 12 }} disabled={sent} onClick={submitFlag}>{sent ? 'Queued for judging' : 'Submit flag'}</button></div>
+}
+
+function Submissions({ contest }: { contest: Contest }) {
+  const [rows, setRows] = useState<any[] | null>(null)
+
+  useEffect(() => {
+    submissionApi
+      .mine(contest.id)
+      .then(setRows)
+      .catch(() => setRows([]))
+  }, [contest.id])
+
+  if (rows === null) {
+    return <Loader label="Loading submissions…" />
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="glass">
+        <Empty>No submissions yet.</Empty>
+      </div>
+    )
+  }
+
+  return (
+    <div className="glass" style={{ overflow: 'hidden' }}>
+      <table className="lb">
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Status</th>
+            <th>Verdict</th>
+            <th style={{ textAlign: 'right' }}>Score</th>
+            <th>Submitted</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {rows.map((s) => (
+            <tr key={s.id}>
+              <td>
+                <b>
+                  {String.fromCharCode(64 + s.task_order)}. {s.task_title}
+                </b>
+              </td>
+
+              <td>
+                <span className="mono">
+                  {s.status}
+                </span>
+              </td>
+
+              <td>
+                <b
+                  style={{
+                    color:
+                      s.verdict === 'AC'
+                        ? 'var(--ac)'
+                        : s.verdict
+                        ? 'var(--wa)'
+                        : 'var(--ink-faint)'
+                  }}
+                >
+                  {s.verdict || '—'}
+                </b>
+              </td>
+
+              <td
+                className="mono"
+                style={{ textAlign: 'right' }}
+              >
+                {s.status === 'COMPLETED' ? s.score : '—'}
+              </td>
+
+              <td className="mono faint">
+                {fmtRel(s.submitted_at)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 /* ---------------- Leaderboard ---------------- */
