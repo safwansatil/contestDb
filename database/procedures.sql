@@ -1380,7 +1380,7 @@ $$ LANGUAGE plpgsql;
 -- 9. Participant Kick & Ban Functions
 -- ============================================================
 
--- L. Kick Participant (HOST only)
+-- L. Kick Member (HOST or MODERATOR with restrictions)
 --    Removes the participant from enrollments and records the action in kick_log.
 --    The kicked user cannot re-enroll (enforced by enroll_in_contest ban check).
 --    The participant's submission history is preserved for record integrity.
@@ -1394,41 +1394,59 @@ DECLARE
     v_req_role      VARCHAR;
     v_target_role   VARCHAR;
 BEGIN
-    -- Only HOST can kick participants
     SELECT role INTO v_req_role
     FROM enrollments
-    WHERE contest_id = p_contest_id AND user_id = p_requesting_user_id;
+    WHERE contest_id = p_contest_id
+      AND user_id = p_requesting_user_id;
 
-    IF v_req_role IS NULL OR v_req_role <> 'HOST' THEN
-        RAISE EXCEPTION 'Unauthorized: Only the Host can remove participants';
+    IF v_req_role IS NULL
+       OR v_req_role NOT IN ('HOST', 'MODERATOR') THEN
+        RAISE EXCEPTION
+            'Unauthorized: Only Host or Moderator can remove members';
     END IF;
 
-    -- Verify the target is enrolled
     SELECT role INTO v_target_role
     FROM enrollments
-    WHERE contest_id = p_contest_id AND user_id = p_target_user_id;
+    WHERE contest_id = p_contest_id
+      AND user_id = p_target_user_id;
 
     IF v_target_role IS NULL THEN
-        RAISE EXCEPTION 'Target user is not enrolled in this contest';
+        RAISE EXCEPTION
+            'Target user is not enrolled in this contest';
     END IF;
 
-    -- A HOST cannot kick themselves
     IF p_target_user_id = p_requesting_user_id THEN
-        RAISE EXCEPTION 'A Host cannot remove themselves from the contest';
+        RAISE EXCEPTION
+            'You cannot remove yourself from the contest';
     END IF;
 
-    -- Another HOST cannot be kicked (only MODERATOR or PARTICIPANT)
     IF v_target_role = 'HOST' THEN
-        RAISE EXCEPTION 'Cannot remove another Host from the contest';
+        RAISE EXCEPTION
+            'Cannot remove the Host from the contest';
     END IF;
 
-    -- Record the kick in the audit log (acts as permanent ban for this contest)
-    INSERT INTO kick_log (contest_id, kicked_user_id, kicked_by, reason)
-    VALUES (p_contest_id, p_target_user_id, p_requesting_user_id, p_reason);
+    IF v_req_role = 'MODERATOR'
+       AND v_target_role = 'MODERATOR' THEN
+        RAISE EXCEPTION
+            'Moderators cannot remove another Moderator';
+    END IF;
 
-    -- Remove the enrollment
+    INSERT INTO kick_log (
+        contest_id,
+        kicked_user_id,
+        kicked_by,
+        reason
+    )
+    VALUES (
+        p_contest_id,
+        p_target_user_id,
+        p_requesting_user_id,
+        p_reason
+    );
+
     DELETE FROM enrollments
-    WHERE contest_id = p_contest_id AND user_id = p_target_user_id;
+    WHERE contest_id = p_contest_id
+      AND user_id = p_target_user_id;
 END;
 $$ LANGUAGE plpgsql;
 
