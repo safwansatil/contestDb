@@ -487,3 +487,170 @@ body{background:var(--paper);font-family:var(--font-body);font-size:15px}.aurora
 .auth-spread{min-height:calc(100vh - 70px);display:grid;grid-template-columns:1.15fr .85fr}.auth-poster{background:var(--accent);color:var(--accent-ink);padding:8vw;display:flex;flex-direction:column;justify-content:space-between}.auth-poster h1{font-size:clamp(62px,10vw,138px);letter-spacing:-.12em;line-height:.75}.auth-form{display:grid;place-items:center;padding:32px}.auth-form .glass{width:min(100%,430px);border:1px solid var(--ink);padding:34px}.auth-form h1{font-size:42px;letter-spacing:-.07em}
 @media(max-width:850px){.site-nav{padding:0 16px;height:62px;gap:12px}.wordmark small,.nav-links,.nav-signout,.user-chip span,.theme-select span{display:none}.theme-select select{width:92px}.nav-actions{gap:8px}.editorial-cover,.auth-spread,.profile-cover{grid-template-columns:1fr}.cover-copy{padding:48px 26px}.cover-index{min-height:260px}.editorial-strip,.contest-editorial-grid{grid-template-columns:1fr}.editorial-strip article{border-right:0;border-bottom:1px solid var(--ink)}.landing-cta{grid-template-columns:1fr;margin:40px 16px}.editorial-page,.contest-paper{padding-left:16px;padding-right:16px}.page-heading,.explore-controls{grid-template-columns:1fr}.timeline-filter{overflow:auto}.request-grid{grid-template-columns:1fr}.request-note{border-right:0;border-bottom:1px solid var(--ink)}.contest-paper .tabs{top:62px}.auth-poster{min-height:360px}.profile-stats{grid-template-columns:repeat(2,1fr)}}
 
+/* ==========================================================
+   Landing theme selector and contrast improvements
+   ========================================================== */
+
+.theme-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.theme-select__label {
+  font: 10px var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.theme-select select {
+  width: 178px;
+  min-height: 36px;
+  padding: 7px 34px 7px 11px;
+
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+
+  background-color: var(--paper);
+  color: var(--ink);
+
+  font: 11px var(--mono);
+  letter-spacing: 0.01em;
+
+  cursor: pointer;
+
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.theme-select select:hover {
+  border-color: var(--ink);
+
+  background-color:
+    color-mix(
+      in srgb,
+      var(--ink) 4%,
+      var(--paper)
+    );
+}
+
+.theme-select select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+
+  box-shadow:
+    0 0 0 3px
+    color-mix(
+      in srgb,
+      var(--accent) 18%,
+      transparent
+    );
+}
+
+.theme-select select option {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/*
+ * Fixed high-contrast colors prevent the feature section from
+ * becoming unreadable when the user changes themes.
+ */
+.editorial-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+
+  background: #1d252d;
+  color: #fffaf0;
+
+  border-bottom: 1px solid #ffffff3d;
+}
+
+.editorial-strip article {
+  min-height: 190px;
+  padding: 30px 25px;
+
+  border-right: 1px solid #ffffff3d;
+}
+
+.editorial-strip article:last-child {
+  border-right: 0;
+}
+
+.editorial-strip .label {
+  color: #cbd3d8;
+}
+
+.editorial-strip h3 {
+  margin: 18px 0 9px;
+
+  color: #ffffff;
+  font-size: 22px;
+}
+
+.editorial-strip p {
+  margin: 0;
+
+  color: #cbd3d8;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+/* Responsive theme dropdown and landing section. */
+@media (max-width: 850px) {
+  .theme-select__label {
+    display: none;
+  }
+
+  .theme-select select {
+    width: 62px;
+    padding-right: 25px;
+  }
+
+  .editorial-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .editorial-strip article {
+    border-right: 0;
+    border-bottom: 1px solid #ffffff3d;
+  }
+
+  .editorial-strip article:last-child {
+    border-bottom: 0;
+  }
+}
+
+/* ==========================================================
+   Landing call-to-action contrast fix
+   ========================================================== */
+
+.landing-cta {
+  background: #1d252d !important;
+  color: #ffffff !important;
+  border-color: #59636c !important;
+}
+
+.landing-cta h2,
+.landing-cta h2 em {
+  color: #ffffff !important;
+}
+
+.landing-cta aside {
+  background: #eef0dc !important;
+  color: #171411 !important;
+}
+
+.landing-cta aside .btn.primary {
+  background: #657a30 !important;
+  color: #ffffff !important;
+  border-color: #657a30 !important;
+}
+
+.landing-cta aside .btn.primary:hover {
+  background: #536627 !important;
+  border-color: #536627 !important;
+}
