@@ -297,11 +297,62 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .tabs button.on{color:var(--primary);border-bottom-color:var(--primary)}
 .tabs .badge{margin-left:6px;font-family:var(--mono);font-size:10.5px;background:var(--fill-2);color:var(--ink-dim);padding:1px 6px;border-radius:99px}
 
-.contest-countdown{display:flex;gap:9px}
-.cd-unit{background:var(--fill-1);border:1px solid var(--glass-border);border-radius:var(--r-sm);padding:9px 0;text-align:center;min-width:58px}
-.cd-unit b{font-family:var(--mono);font-size:23px;font-weight:700;display:block;letter-spacing:-.02em}
-.cd-unit small{font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint)}
+.contest-countdown {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 9px;
 
+  width: max-content;
+  min-height: 58px;
+  margin-left: auto;
+
+  overflow: visible;
+  white-space: nowrap;
+}
+.cd-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 62px;
+  min-height: 58px;
+  padding: 8px 10px;
+
+  overflow: visible;
+
+  background: var(--fill-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+
+  color: var(--ink);
+  text-align: center;
+}
+
+.cd-unit b {
+  display: block;
+
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 23px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.cd-unit small {
+  display: block;
+  margin-top: 4px;
+
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1.2;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
 .timeline{display:flex;align-items:center;margin:20px 0 4px}
 .tl-node{display:flex;flex-direction:column;align-items:center;gap:7px}
 .tl-dot{width:13px;height:13px;border-radius:50%;border:2px solid var(--glass-border-strong);background:var(--base-200)}
@@ -763,5 +814,21 @@ body {
   .contest-paper,
   .auth-spread {
     min-height: calc(100vh - 62px);
+  }
+}
+
+@media (max-width: 600px) {
+  .contest-countdown {
+    gap: 6px;
+  }
+
+  .cd-unit {
+    min-width: 52px;
+    min-height: 54px;
+    padding: 7px 6px;
+  }
+
+  .cd-unit b {
+    font-size: 20px;
   }
 }
