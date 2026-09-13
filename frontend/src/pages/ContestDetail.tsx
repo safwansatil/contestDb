@@ -895,13 +895,12 @@ function RoleSelect({
           <div
             className="notice"
             style={{
-              background: 'rgba(255,255,255,.08)',
-              color: '#fff',
-              border: '1px solid rgba(255,255,255,.22)'
+              background: 'rgba(180, 35, 35, 0.22)',
+              color: '#ff8a8a',
+              border: '1px solid rgba(255, 90, 90, 0.55)'
             }}
           >
-            ⚠ Are you sure you want to change {m.username}'s role
-            to {pendingRole}?
+            ⚠ Are you sure you want to change {m.username}'s role to {pendingRole}?
           </div>
         </Modal>
       )}

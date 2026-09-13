@@ -38,7 +38,9 @@ export function Profile() {
   // build a 18-week heatmap keyed by date -> count
   const byDate = new Map(p.activity_graph.map((a) => [a.date, a.count]))
   const cells: { date: string; count: number }[] = []
-  const start = new Date(); start.setDate(start.getDate() - 18 * 7)
+  const start = new Date()
+  start.setDate(start.getDate() - (18 * 7 - 1))
+
   for (let i = 0; i < 18 * 7; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i)
     const key = d.toISOString().slice(0, 10)
