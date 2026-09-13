@@ -17,6 +17,17 @@ python database\setup_db.py
 ```
 
 ```powershell
+cd .\backend\
+venv\Scripts\Activate.ps1   
+cd ..
+python backend/demo_judges.py
+python backend/run_server.py
+python worker/worker.py
+cd frontend
+npm run dev
+```
+
+```powershell
 # Terminal 2 — API
 .\.venv\Scripts\Activate.ps1
 python backend\run_server.py

@@ -15,6 +15,7 @@ RETURNS TABLE (
     submission_id INT,
     contest_id INT,
     user_id INT,
+    task_id INT,
     submission_data JSONB,
     webhook_url VARCHAR,
     contest_type VARCHAR
@@ -74,7 +75,7 @@ BEGIN
         WHERE id = v_sub_id;
 
         RETURN QUERY
-        SELECT s.id, s.contest_id, s.user_id, s.submission_data, 
+        SELECT s.id, s.contest_id, s.user_id, s.task_id, s.submission_data,
                COALESCE(t.webhook_url, c.judge_webhook_url) AS webhook_url,
                c.contest_type
         FROM submissions s
