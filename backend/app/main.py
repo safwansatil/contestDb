@@ -899,6 +899,53 @@ async def create_submission(
                     detail=error_message,
                 )
 
+@app.get("/contests/{contest_id}/my-submissions")
+async def get_my_contest_submissions(
+    contest_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    user_id = current_user["user_id"]
+
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT
+                    s.id,
+                    s.task_id,
+                    t.title,
+                    t.task_order,
+                    s.status,
+                    s.score,
+                    s.verdict,
+                    s.submitted_at,
+                    s.judged_at
+                FROM submissions s
+                JOIN tasks t ON t.id = s.task_id
+                WHERE s.contest_id = %s
+                  AND s.user_id = %s
+                ORDER BY s.submitted_at DESC;
+                """,
+                (contest_id, user_id),
+            )
+
+            rows = await cur.fetchall()
+
+            return [
+                {
+                    "id": r[0],
+                    "task_id": r[1],
+                    "task_title": r[2],
+                    "task_order": r[3],
+                    "status": r[4],
+                    "score": float(r[5]),
+                    "verdict": r[6],
+                    "submitted_at": r[7],
+                    "judged_at": r[8],
+                }
+                for r in rows
+            ]
+        
 class WebhookCallbackRequest(BaseModel):
     score: float
     verdict: str

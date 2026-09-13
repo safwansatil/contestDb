@@ -97,6 +97,9 @@ export const formatRequestApi = {
 export const submissionApi = {
   create: (contest_id: number, task_id: number, submission_data: Record<string, unknown>) =>
     api.post('/submissions', { contest_id, task_id, submission_data }).then(r => r.data),
+
+  mine: (contest_id: number) =>
+    api.get(`/contests/${contest_id}/my-submissions`).then(r => r.data),
 }
 
 /* ---------- Users ---------- */
