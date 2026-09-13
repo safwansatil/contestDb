@@ -20,8 +20,8 @@ INSERT INTO contests (id, title, ranking_strategy, start_time, freeze_time, end_
  'ACTIVE', 'ICPC style algorithmic contest', NULL, TRUE, 'icpc', 'http://127.0.0.1:8001/judge/icpc'),
 (2, 'Chess Checkmate Puzzles', 'MAX', NOW() - INTERVAL '1 hour', NOW() + INTERVAL '2 hours', NOW() + INTERVAL '3 hours',
  'ACTIVE', 'Find the forced checkmates', NULL, TRUE, 'chess', 'http://127.0.0.1:8001/judge/chess'),
-(3, 'Capture The Flag (CTF)', 'SUM', NOW() - INTERVAL '1 hour', NOW() + INTERVAL '2 hours', NOW() + INTERVAL '3 hours',
- 'ACTIVE', 'Find the hidden flags in vulnerable apps', NULL, TRUE, 'ctf', 'http://127.0.0.1:8001/judge/ctf');
+(3, 'CTFDB: First Signals', 'SUM', NOW() - INTERVAL '1 hour', NOW() + INTERVAL '2 hours', NOW() + INTERVAL '3 hours',
+ 'ACTIVE', 'A safe, self-contained beginner CTF. Read each brief, inspect the supplied evidence, and submit flags in CTFDB{...} format.', NULL, TRUE, 'ctf', 'http://127.0.0.1:8001/judge/ctf');
 
 -- 3. Insert Tasks
 -- ICPC Tasks — ten familiar algorithm topics for the host demo.
@@ -43,11 +43,12 @@ INSERT INTO tasks (id, contest_id, title, description, max_score, submission_sch
 (12, 2, 'Level 2: Back Rank', 'Spot the back-rank pattern and finish the game.', 150.0, '{"required_keys": ["moves", "fen"]}'::jsonb, 2),
 (13, 2, 'Level 3: Queen Net', 'Calculate the final move of a queen-and-king mating net.', 200.0, '{"required_keys": ["moves", "fen"]}'::jsonb, 3);
 
--- CTF Tasks
-INSERT INTO tasks (id, contest_id, title, description, max_score, submission_schema, task_order) VALUES
-(14, 3, 'Web: Source Safari', 'Read the page clue: the demo flag is CTFDB{view_source_first}.', 100.0, '{"required_keys": ["flag"]}'::jsonb, 1),
-(15, 3, 'Crypto: Base64 Beacon', 'Decode Q1RGREJ7YmFzZTY0X2lzX2VuY29kaW5nfQ==.', 100.0, '{"required_keys": ["flag"]}'::jsonb, 2),
-(16, 3, 'Forensics: Packet Note', 'A recovered note says: CTFDB{metadata_matters}. Submit it as the flag.', 100.0, '{"required_keys": ["flag"]}'::jsonb, 3);
+-- CTF Tasks — deliberately safe, self-contained introductory challenges.
+-- The UI provides the evidence panels; flags are validated per task by demo_judges.py.
+INSERT INTO tasks (id, contest_id, title, description, max_score, submission_schema, submission_cooldown_seconds, task_order) VALUES
+(14, 3, 'View from the Source', 'Web · Easy · 100 points. Learn where a webpage can keep its author notes. Inspect the supplied page fragment; no external website is involved.', 100.0, '{"required_keys": ["flag"]}'::jsonb, 20, 1),
+(15, 3, 'Beacon in Transit', 'Crypto · Easy · 150 points. A short transmission was encoded for safe transport. Identify the encoding and recover the original flag.', 150.0, '{"required_keys": ["flag"]}'::jsonb, 20, 2),
+(16, 3, 'Case File 03', 'Forensics · Easy · 200 points. Read a tiny evidence manifest and use its metadata convention to reconstruct the flag.', 200.0, '{"required_keys": ["flag"]}'::jsonb, 20, 3);
 
 -- 4. Enroll Users in Contests (With explicit roles)
 INSERT INTO enrollments (contest_id, user_id, role) VALUES

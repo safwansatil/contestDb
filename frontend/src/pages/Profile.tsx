@@ -45,6 +45,8 @@ export function Profile() {
     cells.push({ date: key, count: byDate.get(key) || 0 })
   }
   const lvl = (n: number) => (n === 0 ? '' : n < 2 ? 'l1' : n < 4 ? 'l2' : n < 7 ? 'l3' : 'l4')
+  const totalActivity = cells.reduce((total, cell) => total + cell.count, 0)
+  const activeDays = cells.filter((cell) => cell.count > 0).length
 
   return (
     <Page>
@@ -54,16 +56,12 @@ export function Profile() {
           <div className="profile-stats">{[['Avg score', st.average_score.toFixed(1)], ['Best', st.max_score_single], ['Contests', st.total_contests_joined], ['Submissions', st.total_submissions]].map(([l, n]) => <div key={l}><strong>{n}</strong><span className="label" style={{display:'block',marginTop:6}}>{l}</span></div>)}</div>
         </div>
 
-        <div className="glass pad-lg" style={{ marginBottom: 18 }}>
-          <div className="label" style={{ marginBottom: 14 }}>Submission activity · last 18 weeks</div>
+        <section className="activity-record">
+          <div className="activity-heading"><div><span className="label">Contribution record</span><h2>Your work, day by day.</h2><p>{totalActivity} submissions across {activeDays} active days in the last 18 weeks.</p></div><div className="activity-key"><span>Less</span><i /><i className="l1" /><i className="l2" /><i className="l3" /><i className="l4" /><span>More</span></div></div>
           <div style={{ overflowX: 'auto' }}>
-            <div className="heat">{cells.map((c) => <i key={c.date} className={lvl(c.count)} title={`${c.date}: ${c.count}`} />)}</div>
+            <div className="activity-board"><div className="activity-days"><span>Mon</span><span>Wed</span><span>Fri</span></div><div className="heat">{cells.map((c) => <i key={c.date} className={lvl(c.count)} title={`${c.date}: ${c.count} submission${c.count === 1 ? '' : 's'}`} />)}</div></div>
           </div>
-          <div className="row faint" style={{ gap: 6, justifyContent: 'flex-end', marginTop: 12, fontSize: 11 }}>
-            Less <span className="heat" style={{ display: 'inline-flex', gridAutoFlow: 'column' }}>
-              <i /><i className="l1" /><i className="l2" /><i className="l3" /><i className="l4" /></span> More
-          </div>
-        </div>
+        </section>
 
         <div className="two-col">
           <div className="glass" style={{ overflow: 'hidden' }}>

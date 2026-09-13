@@ -76,11 +76,15 @@ def run_test():
                 print("[FAIL] Could not claim submission")
                 sys.exit(1)
             
-            c_sub_id, c_contest, c_user, c_data, c_webhook = claimed
-            print(f"-> Claimed Submission. Webhook URL: {c_webhook}")
+            c_sub_id, c_contest, c_user, c_task_id, c_data, c_webhook, c_contest_type = claimed
+            print(f"-> Claimed Submission for task #{c_task_id}. Webhook URL: {c_webhook}")
             
             if c_webhook != webhook_url:
                 print(f"[FAIL] Expected webhook URL {webhook_url}, got {c_webhook}")
+                sys.exit(1)
+
+            if c_task_id != task_id:
+                print(f"[FAIL] Expected task ID {task_id}, got {c_task_id}")
                 sys.exit(1)
             
             # Verify status is JUDGING

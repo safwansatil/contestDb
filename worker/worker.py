@@ -3,6 +3,8 @@ import time
 import json
 import logging
 from pathlib import Path
+from urllib import error as urlerror
+from urllib import request as urlrequest
 from dotenv import load_dotenv
 import psycopg
 
@@ -70,6 +72,24 @@ def evaluate_submission(payload: dict) -> tuple[float, str]:
     else:
         return 50.0, "GENERIC_SUCCESS"
 
+
+def call_judge(url: str, payload: dict) -> dict:
+    """POST a JSON payload without depending on the optional requests package."""
+    body = json.dumps(payload).encode("utf-8")
+    req = urlrequest.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=5) as response:
+            if not 200 <= response.status < 300:
+                raise RuntimeError(f"Judge returned HTTP {response.status}")
+            return json.loads(response.read().decode("utf-8"))
+    except urlerror.URLError as exc:
+        raise RuntimeError(f"Could not reach judge at {url}: {exc.reason}") from exc
+
 def main():
     logger.info(f"Starting ContestDB Mock Worker: {WORKER_ID}")
     
@@ -89,23 +109,21 @@ def main():
                     row = cur.fetchone()
                     
                     if row:
-                        sub_id, contest_id, user_id, sub_data, webhook_url, contest_type = row
+                        sub_id, contest_id, user_id, task_id, sub_data, webhook_url, contest_type = row
                         logger.info(f"Locked submission #{sub_id} from contest #{contest_id} by user #{user_id}")
                         
                         try:
                             if webhook_url:
-                                import requests
                                 logger.info(f"Dispatching submission #{sub_id} to webhook: {webhook_url}")
                                 payload = {
                                     "contest_id": str(contest_id),
                                     "contest_type": contest_type,
                                     "submission_id": str(sub_id),
+                                    "task_id": str(task_id),
                                     "participant_id": str(user_id),
                                     "payload": sub_data
                                 }
-                                response = requests.post(webhook_url, json=payload, timeout=5)
-                                response.raise_for_status()
-                                judge_res = response.json()
+                                judge_res = call_judge(webhook_url, payload)
                                 logger.info(f"Successfully dispatched submission #{sub_id} to webhook. Response: {judge_res}")
                                 
                                 # Update submissions with the webhook response

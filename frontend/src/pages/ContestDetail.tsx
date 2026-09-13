@@ -13,7 +13,7 @@ import { SubmitModal } from '../components/SubmitModal'
 import { IconSeal, IconEye, IconArrowLeft } from '../components/icons'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
-import { submissionApi } from '../lib/api'
+import { submissionApi, userApi } from '../lib/api'
 
 const TABS = (c: Contest, admin: boolean) => [
   ['overview', 'Overview', null],
@@ -350,15 +350,27 @@ function ChessLevel({ contest, task, canSubmit }: { contest: Contest; task: Task
 }
 
 function CtfArena({ contest, tasks, canSubmit }: { contest: Contest; tasks: Task[]; canSubmit: boolean }) {
-  return <div><div className="notice blue" style={{ marginBottom: 16 }}>🚩 Beginner CTF lab — these are safe, self-contained learning challenges. Find the flag and submit it.</div><div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>{tasks.map((task) => <CtfChallenge key={task.id} contest={contest} task={task} canSubmit={canSubmit} />)}</div></div>
+  return <section className="ctf-lab">
+    <header className="ctf-masthead"><div><span className="label">CTFDB / Practice range</span><h2>First signals.</h2><p>Three safe, self-contained introductions to web inspection, encoding, and file metadata. There are no live targets and no tools beyond your browser or a local decoder.</p></div><aside><span className="label">Rules of engagement</span><ol><li>Submit exactly one flag per challenge.</li><li>Flags use <code>CTFDB&#123;...&#125;</code>.</li><li>Hints are free; points are fixed.</li></ol></aside></header>
+    <div className="ctf-grid">{tasks.map((task) => <CtfChallenge key={task.id} contest={contest} task={task} canSubmit={canSubmit} />)}</div>
+  </section>
 }
 
 function CtfChallenge({ contest, task, canSubmit }: { contest: Contest; task: Task; canSubmit: boolean }) {
-  const [flag, setFlag] = useState('')
-  const [sent, setSent] = useState(false)
+  const [flag, setFlag] = useState(''); const [phase, setPhase] = useState<'ready' | 'queued' | 'correct' | 'wrong'>('ready')
   const toast = useToast()
-  async function submitFlag() { if (!flag.trim()) return toast('Enter a flag first', 'err'); if (!canSubmit) return toast('Enroll or wait for the contest to become active.', 'err'); try { await submissionApi.create(contest.id, task.id, { flag: flag.trim() }); setSent(true); toast(`${task.title} queued for judging`) } catch (e) { toast(apiError(e), 'err') } }
-  return <div className="glass pad"><div className="label">Challenge {task.task_order}</div><h3 style={{ margin: '5px 0 9px' }}>{task.title}</h3><p className="dim" style={{ minHeight: 58, fontSize: 13 }}>{task.description}</p><div className="field" style={{ margin: 0 }}><label>Flag</label><input value={flag} onChange={(e) => setFlag(e.target.value)} placeholder="CTFDB{...}" /></div><button className="btn primary block" style={{ marginTop: 12 }} disabled={sent} onClick={submitFlag}>{sent ? 'Queued for judging' : 'Submit flag'}</button></div>
+  const { user } = useAuth()
+  const brief = CTF_BRIEFS[task.task_order] || { category: 'General', time: '5 min', mission: task.description, evidence: 'No extra evidence supplied.', hint: 'Read the task statement closely.' }
+  async function waitForVerdict(submissionId: number) { for (let i = 0; i < 15; i++) { await new Promise((resolve) => setTimeout(resolve, 1200)); try { const history = await userApi.history(user!.id); const found = history.submissions_history.find((item: { submission_id: number; verdict: string | null }) => item.submission_id === submissionId); if (found?.verdict) { const correct = found.verdict === 'CORRECT'; setPhase(correct ? 'correct' : 'wrong'); toast(correct ? `${task.title} solved — ${task.max_score} points` : 'Not this flag. Review the evidence and try again after the cooldown.', correct ? 'info' : 'err'); return } } catch { /* worker may still be processing */ } } setPhase('ready'); toast('Judging is taking longer than expected. Check your profile shortly.', 'info') }
+  async function submitFlag() { if (!/^CTFDB\{.+\}$/.test(flag.trim())) return toast('Use the exact CTFDB{...} flag format.', 'err'); if (!canSubmit) return toast('Enroll or wait for the contest to become active.', 'err'); setPhase('queued'); try { const result = await submissionApi.create(contest.id, task.id, { flag: flag.trim() }); toast(`${task.title} entered the judge queue`, 'info'); await waitForVerdict(result.submission_id) } catch (e) { setPhase('ready'); toast(apiError(e), 'err') } }
+  const locked = phase === 'queued' || phase === 'correct'
+  return <article className={`ctf-card ${phase === 'correct' ? 'solved' : ''}`}><header><span className="ctf-number">{String(task.task_order).padStart(2, '0')}</span><div><span className="label">{brief.category} / easy</span><h3>{task.title}</h3></div><strong>{task.max_score}<small>pts</small></strong></header><div className="ctf-brief"><span className="label">Mission</span><p>{brief.mission}</p><span className="label">Evidence</span><pre>{brief.evidence}</pre><div className="ctf-meta"><span>EST. {brief.time}</span><span>20 SEC COOLDOWN</span></div><details><summary>Need a hint?</summary><p>{brief.hint}</p></details></div><div className="ctf-submit"><label htmlFor={`flag-${task.id}`}>{phase === 'correct' ? '✓ Flag accepted' : phase === 'queued' ? 'Judging your flag…' : phase === 'wrong' ? 'Try another flag' : 'Flag submission'}</label><div><input id={`flag-${task.id}`} value={flag} onChange={(e) => { setFlag(e.target.value); if (phase === 'wrong') setPhase('ready') }} placeholder="CTFDB{...}" disabled={locked} spellCheck={false} /><button className="btn primary" disabled={locked} onClick={submitFlag}>{phase === 'queued' ? 'Judging' : phase === 'correct' ? 'Solved' : 'Submit'}</button></div></div></article>
+}
+
+const CTF_BRIEFS: Record<number, { category: string; time: string; mission: string; evidence: string; hint: string }> = {
+  1: { category: 'Web', time: '3 min', mission: 'The welcome page looks ordinary. Inspect the supplied HTML fragment and recover the author’s hidden note.', evidence: '<main>Welcome, competitor.</main>\n<!-- author-note: view_source_first -->', hint: 'Browsers let you inspect the page source or its elements. HTML comments are not displayed on the page.' },
+  2: { category: 'Crypto', time: '5 min', mission: 'A compact radio transmission has been encoded for transport. Identify the encoding, decode it once, and submit the result.', evidence: 'Q1RGREJ7YmFzZTY0X2lzX2VuY29kaW5nfQ==', hint: 'The alphabet, padding characters, and length are clues. This is an encoding, not encryption.' },
+  3: { category: 'Forensics', time: '6 min', mission: 'A responder left an evidence manifest. Follow the naming convention recorded in its metadata to reconstruct the flag.', evidence: 'case: LAB-03\nartifact: archive.jpg\ncomment: metadata matters\nflag style: CTFDB{comment_with_underscores}', hint: 'Use the value after “comment” and apply the declared flag style exactly.' },
 }
 
 /* ---------------- Leaderboard ---------------- */

@@ -41,15 +41,19 @@ async def judge_ctf(request: Request):
     payload = await request.json()
     logger.info(f"Received CTF submission: {payload}")
     sub_data = payload.get("payload", {})
-    flag = sub_data.get("flag", "")
-    
-    valid_flags = {
-        "CTFDB{view_source_first}",
-        "CTFDB{base64_is_encoding}",
-        "CTFDB{metadata_matters}",
+    flag = str(sub_data.get("flag", "")).strip()
+    task_id = str(payload.get("task_id", ""))
+
+    # Each flag is bound to its task.  This keeps a correct flag from being
+    # replayed against every task and gives the three beginner tasks distinct scores.
+    challenges = {
+        "14": ("CTFDB{view_source_first}", 100),
+        "15": ("CTFDB{base64_is_encoding}", 150),
+        "16": ("CTFDB{metadata_matters}", 200),
     }
-    if flag in valid_flags:
-        return {"score": 100, "status": "CORRECT"}
+    expected = challenges.get(task_id)
+    if expected and flag == expected[0]:
+        return {"score": expected[1], "status": "CORRECT"}
     return {"score": 0, "status": "WRONG_FLAG"}
 
 if __name__ == "__main__":
