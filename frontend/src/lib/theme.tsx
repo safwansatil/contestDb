@@ -1,35 +1,22 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
-export type ThemeId = 'light' | 'dark' | 'cupcake' | 'retro' | 'cyberpunk' | 'valentine' | 'aqua' | 'dracula' | 'night'
-
-export const THEMES: { id: ThemeId; label: string }[] = [
-  { id: 'light', label: 'Light' },
-  { id: 'dark', label: 'Dark' },
-  { id: 'cupcake', label: 'Cupcake' },
-  { id: 'retro', label: 'Retro' },
-  { id: 'cyberpunk', label: 'Cyberpunk' },
-  { id: 'valentine', label: 'Valentine' },
-  { id: 'aqua', label: 'Aqua' },
-  { id: 'dracula', label: 'Dracula' },
-  { id: 'night', label: 'Night' },
-]
-
+export const THEMES = [
+  ['magazine-red', 'Magazine red'], ['corporate-blue', 'Corporate blue'], ['yellow', 'Newsprint yellow'],
+  ['lime', 'Acid lime'], ['purple', 'Royal purple'], ['night', 'Night'], ['ice', 'Ice'],
+  ['tea', 'Tea'], ['coffee', 'Coffee'], ['corporate', 'Corporate'],
+] as const
+export type ThemeId = typeof THEMES[number][0]
 const KEY = 'contestdb_theme'
-function initial(): ThemeId {
-  const saved = (typeof localStorage !== 'undefined' && localStorage.getItem(KEY)) as ThemeId | null
-  return saved && THEMES.some((t) => t.id === saved) ? saved : 'cupcake'
-}
-
-interface Ctx { theme: ThemeId; setTheme: (t: ThemeId) => void }
-const ThemeCtx = createContext<Ctx>({ theme: 'cupcake', setTheme: () => {} })
+const valid = (value: string | null): value is ThemeId => THEMES.some(([id]) => id === value)
+interface Ctx { theme: ThemeId; setTheme: (theme: ThemeId) => void }
+const ThemeCtx = createContext<Ctx>({ theme: 'magazine-red', setTheme: () => {} })
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<ThemeId>(initial)
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-    try { localStorage.setItem(KEY, theme) } catch { /* ignore */ }
-  }, [theme])
+  const [theme, setTheme] = useState<ThemeId>(() => {
+    const saved = typeof localStorage === 'undefined' ? null : localStorage.getItem(KEY)
+    return valid(saved) ? saved : 'magazine-red'
+  })
+  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem(KEY, theme) }, [theme])
   return <ThemeCtx.Provider value={{ theme, setTheme }}>{children}</ThemeCtx.Provider>
 }
-
 export const useTheme = () => useContext(ThemeCtx)

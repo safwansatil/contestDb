@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { userApi } from '../lib/api'
 import { fmtDate, verdictClass, verdictColor } from '../lib/format'
-import { Page, Loader, Empty, RankBadge, Avatar } from '../components/ui'
+import { Page, Loader, Empty, RankBadge } from '../components/ui'
 
 interface ProfileData {
   user_id: number; username: string; created_at: string
@@ -48,18 +48,10 @@ export function Profile() {
 
   return (
     <Page>
-      <div className="page">
-        <div className="glass pad-lg" style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
-          <Avatar name={p.username} size={72} />
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <h1 style={{ fontSize: 25 }}>{p.username}</h1>
-            <div className="dim" style={{ fontSize: 13, marginTop: 4 }}>Joined {fmtDate(p.created_at)} · user #{p.user_id}</div>
-          </div>
-          <div className="wrap-row" style={{ gap: 22 }}>
-            {[['Avg score', st.average_score.toFixed(1)], ['Best', st.max_score_single], ['Contests', st.total_contests_joined], ['Submissions', st.total_submissions]].map(([l, n]) => (
-              <div key={l} className="center"><div className="mono" style={{ fontSize: 24, fontWeight: 800 }}>{n}</div><div className="label">{l}</div></div>
-            ))}
-          </div>
+      <div className="editorial-page">
+        <div className="profile-cover">
+          <div className="profile-main"><span className="label" style={{color:'inherit'}}>Competitor file / {p.user_id}</span><h1>{p.username}</h1><p className="mono" style={{fontSize:11}}>ON THE BOARD SINCE {fmtDate(p.created_at)}</p></div>
+          <div className="profile-stats">{[['Avg score', st.average_score.toFixed(1)], ['Best', st.max_score_single], ['Contests', st.total_contests_joined], ['Submissions', st.total_submissions]].map(([l, n]) => <div key={l}><strong>{n}</strong><span className="label" style={{display:'block',marginTop:6}}>{l}</span></div>)}</div>
         </div>
 
         <div className="glass pad-lg" style={{ marginBottom: 18 }}>

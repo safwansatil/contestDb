@@ -69,7 +69,7 @@ export function ContestDetail() {
 
   return (
     <Page>
-      <div className="page">
+      <div className="contest-paper">
         <button className="btn ghost sm" onClick={() => nav('/app')} style={{ marginBottom: 14 }}><IconArrowLeft size={15} /> Explore</button>
 
         {/* Hero */}
