@@ -15,7 +15,9 @@ RETURNS TABLE (
     submission_id INT,
     contest_id INT,
     user_id INT,
-    submission_data JSONB
+    submission_data JSONB,
+    webhook_url VARCHAR,
+    contest_type VARCHAR
 ) AS $$
 DECLARE
     v_sub_id INT;
@@ -72,9 +74,41 @@ BEGIN
         WHERE id = v_sub_id;
 
         RETURN QUERY
-        SELECT s.id, s.contest_id, s.user_id, s.submission_data
+        SELECT s.id, s.contest_id, s.user_id, s.submission_data, 
+               COALESCE(t.webhook_url, c.judge_webhook_url) AS webhook_url,
+               c.contest_type
         FROM submissions s
+        JOIN contests c ON s.contest_id = c.id
+        LEFT JOIN tasks t ON s.task_id = t.id
         WHERE s.id = v_sub_id;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- 1a. Function to Record Submission Result from Webhook (Async Callback)
+-- ============================================================
+CREATE OR REPLACE FUNCTION update_submission_result_native(
+    p_submission_id INT,
+    p_score NUMERIC,
+    p_verdict VARCHAR,
+    p_judged_by VARCHAR
+)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE submissions
+    SET status = 'COMPLETED',
+        score = p_score,
+        verdict = p_verdict,
+        judged_at = CURRENT_TIMESTAMP,
+        judged_by = COALESCE(p_judged_by, judged_by),
+        lease_expires_at = NULL,
+        last_error = NULL
+    WHERE id = p_submission_id
+      AND status = 'JUDGING';
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Submission not found or not in JUDGING state.';
     END IF;
 END;
 $$ LANGUAGE plpgsql;
@@ -488,17 +522,24 @@ CREATE OR REPLACE FUNCTION create_contest_native(
     p_judging_description TEXT,
     p_creator_id INT,
     p_max_participants INT DEFAULT NULL,
-    p_allow_late_enrollment BOOLEAN DEFAULT TRUE
+    p_allow_late_enrollment BOOLEAN DEFAULT TRUE,
+    p_contest_type VARCHAR DEFAULT 'custom',
+    p_judge_webhook_url VARCHAR DEFAULT NULL
 ) RETURNS INT AS $$
 DECLARE
     v_contest_id INT;
+    v_is_dev BOOLEAN;
 BEGIN
+    SELECT is_developer INTO v_is_dev FROM users WHERE id = p_creator_id;
+    IF v_is_dev THEN
+        RAISE EXCEPTION 'Developers cannot host contests';
+    END IF;
     INSERT INTO contests (title, ranking_strategy, start_time, freeze_time, end_time,
                           invitation_code, judging_description, status,
-                          max_participants, allow_late_enrollment)
+                          max_participants, allow_late_enrollment, contest_type, judge_webhook_url)
     VALUES (p_title, p_ranking_strategy, p_start_time, p_freeze_time, p_end_time,
             p_invitation_code, p_judging_description, 'PENDING_APPROVAL',
-            p_max_participants, p_allow_late_enrollment)
+            p_max_participants, p_allow_late_enrollment, p_contest_type, p_judge_webhook_url)
     RETURNING id INTO v_contest_id;
 
     -- Creator is automatically enrolled as HOST
@@ -527,6 +568,44 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION create_contest_type_request_native(
+    p_requester_id INT,
+    p_requested_type VARCHAR,
+    p_title VARCHAR,
+    p_rules_description TEXT,
+    p_requested_tasks TEXT DEFAULT NULL
+) RETURNS INT AS $$
+DECLARE v_request_id INT;
+BEGIN
+    INSERT INTO contest_type_requests (requester_id, requested_type, title, rules_description, requested_tasks)
+    VALUES (p_requester_id, p_requested_type, p_title, p_rules_description, p_requested_tasks)
+    RETURNING id INTO v_request_id;
+    RETURN v_request_id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION decide_contest_type_request_native(
+    p_request_id INT,
+    p_developer_id INT,
+    p_decision VARCHAR,
+    p_note TEXT DEFAULT NULL
+) RETURNS VOID AS $$
+BEGIN
+    IF p_decision NOT IN ('APPROVED', 'REJECTED') THEN
+        RAISE EXCEPTION 'Decision must be APPROVED or REJECTED';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM users WHERE id = p_developer_id AND is_developer = TRUE) THEN
+        RAISE EXCEPTION 'Developer access required';
+    END IF;
+    UPDATE contest_type_requests
+    SET status = p_decision, developer_note = p_note, reviewed_by = p_developer_id, reviewed_at = CURRENT_TIMESTAMP
+    WHERE id = p_request_id AND status = 'PENDING';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Request is not pending or does not exist';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
 -- C. Update Contest (Only Hosts & Moderators)
 CREATE OR REPLACE FUNCTION update_contest_native(
     p_contest_id INT,
@@ -539,7 +618,9 @@ CREATE OR REPLACE FUNCTION update_contest_native(
     p_invitation_code VARCHAR,
     p_judging_description TEXT,
     p_max_participants INT DEFAULT NULL,
-    p_allow_late_enrollment BOOLEAN DEFAULT TRUE
+    p_allow_late_enrollment BOOLEAN DEFAULT TRUE,
+    p_contest_type VARCHAR DEFAULT 'custom',
+    p_judge_webhook_url VARCHAR DEFAULT NULL
 ) RETURNS VOID AS $$
 DECLARE
     v_role VARCHAR;
@@ -561,7 +642,9 @@ BEGIN
         invitation_code = p_invitation_code,
         judging_description = p_judging_description,
         max_participants = p_max_participants,
-        allow_late_enrollment = p_allow_late_enrollment
+        allow_late_enrollment = p_allow_late_enrollment,
+        contest_type = p_contest_type,
+        judge_webhook_url = p_judge_webhook_url
     WHERE id = p_contest_id;
 END;
 $$ LANGUAGE plpgsql;
@@ -602,7 +685,8 @@ CREATE OR REPLACE FUNCTION add_task_native(
     p_max_score NUMERIC,
     p_submission_schema JSONB,
     p_submission_cooldown_seconds INT DEFAULT 0,
-    p_task_order INT DEFAULT 0
+    p_task_order INT DEFAULT 0,
+    p_webhook_url VARCHAR DEFAULT NULL
 ) RETURNS INT AS $$
 DECLARE
     v_role VARCHAR;
@@ -617,9 +701,9 @@ BEGIN
     END IF;
 
     INSERT INTO tasks (contest_id, title, description, max_score,
-                       submission_schema, submission_cooldown_seconds, task_order)
+                       submission_schema, submission_cooldown_seconds, task_order, webhook_url)
     VALUES (p_contest_id, p_title, p_description, p_max_score,
-            p_submission_schema, p_submission_cooldown_seconds, p_task_order)
+            p_submission_schema, p_submission_cooldown_seconds, p_task_order, p_webhook_url)
     RETURNING id INTO v_task_id;
 
     RETURN v_task_id;
@@ -635,7 +719,8 @@ CREATE OR REPLACE FUNCTION update_task_native(
     p_max_score NUMERIC,
     p_submission_schema JSONB,
     p_submission_cooldown_seconds INT DEFAULT 0,
-    p_task_order INT DEFAULT 0
+    p_task_order INT DEFAULT 0,
+    p_webhook_url VARCHAR DEFAULT NULL
 ) RETURNS VOID AS $$
 DECLARE
     v_contest_id INT;
@@ -663,7 +748,8 @@ BEGIN
         max_score = p_max_score,
         submission_schema = p_submission_schema,
         submission_cooldown_seconds = p_submission_cooldown_seconds,
-        task_order = p_task_order
+        task_order = p_task_order,
+        webhook_url = p_webhook_url
     WHERE id = p_task_id;
 END;
 $$ LANGUAGE plpgsql;
@@ -857,7 +943,12 @@ DECLARE
     v_allow_late            BOOLEAN;
     v_start_time            TIMESTAMP WITH TIME ZONE;
     v_current_participants  INT;
+    v_is_dev                BOOLEAN;
 BEGIN
+    SELECT is_developer INTO v_is_dev FROM users WHERE id = p_user_id;
+    IF v_is_dev THEN
+        RAISE EXCEPTION 'Developers cannot enroll in contests';
+    END IF;
     -- 1. Check if already enrolled (idempotent)
     SELECT EXISTS(
         SELECT 1 FROM enrollments
@@ -1106,9 +1197,10 @@ BEGIN
         FROM enrollments
         WHERE contest_id = p_contest_id
           AND user_id = p_user_id
+          AND role = 'PARTICIPANT'
     ) THEN
         RAISE EXCEPTION
-            'User is not enrolled in contest %',
+            'User is not enrolled as a PARTICIPANT in contest %',
             p_contest_id;
     END IF;
 
@@ -1947,7 +2039,9 @@ RETURNS TABLE (
     show_member_list BOOLEAN,
     show_task_list BOOLEAN,
     show_statistics BOOLEAN,
-    show_submission_count BOOLEAN
+    show_submission_count BOOLEAN,
+    contest_type VARCHAR,
+    judge_webhook_url VARCHAR
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -1955,7 +2049,8 @@ BEGIN
            c.status, c.judging_description, c.invitation_code, e.role::VARCHAR AS user_role,
            c.max_participants, c.allow_late_enrollment,
            cv.show_participant_count, cv.show_leaderboard, cv.show_member_list,
-           cv.show_task_list, cv.show_statistics, cv.show_submission_count
+           cv.show_task_list, cv.show_statistics, cv.show_submission_count,
+           c.contest_type, c.judge_webhook_url
     FROM contests c
     LEFT JOIN enrollments e ON c.id = e.contest_id AND e.user_id = p_viewer_id
     LEFT JOIN contest_visibility cv ON c.id = cv.contest_id

@@ -8,8 +8,12 @@ import { fmtDate, fmtRel, timelineStatus, isFrozen, statusColor, isAdmin } from 
 import { useAuth } from '../lib/auth'
 import { useToast } from '../lib/toast'
 import { Page, Loader, Empty, Pill, RankBadge, Avatar, Modal, Spinner } from '../components/ui'
+import { CreateTaskModal } from '../components/CreateTaskModal'
 import { SubmitModal } from '../components/SubmitModal'
 import { IconSeal, IconEye, IconArrowLeft } from '../components/icons'
+import { Chess } from 'chess.js'
+import { Chessboard } from 'react-chessboard'
+import { submissionApi } from '../lib/api'
 
 const TABS = (c: Contest, admin: boolean) => [
   ['overview', 'Overview', null],
@@ -37,7 +41,7 @@ export function ContestDetail() {
     try {
       const data = await contestApi.get(cid)
       setC(data)
-      setEnrolled(!!data.user_role)
+      setEnrolled(data.user_role === 'PARTICIPANT')
       setTasks(await contestApi.tasks(cid).catch(() => []))
     } catch (e) { toast(apiError(e), 'err') }
   }, [cid, toast])
@@ -109,7 +113,7 @@ export function ContestDetail() {
 
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           {tab === 'overview' && <Overview c={c} tasks={tasks} admin={admin} onFullLb={() => setTab('leaderboard')} />}
-          {tab === 'tasks' && <Tasks c={c} tasks={tasks} admin={admin} enrolled={enrolled} tstat={tstat} onSubmit={() => setSubmitting(true)} />}
+          {tab === 'tasks' && <Tasks c={c} tasks={tasks} admin={admin} enrolled={enrolled} tstat={tstat} onSubmit={() => setSubmitting(true)} onRefresh={load} />}
           {tab === 'leaderboard' && <Leaderboard c={c} admin={admin} frozen={frozen} meId={user?.id} />}
           {tab === 'stats' && <Stats c={c} />}
           {tab === 'announcements' && <Announcements c={c} admin={admin} />}
@@ -236,10 +240,18 @@ function Overview({ c, tasks, admin, onFullLb }: { c: Contest; tasks: Task[]; ad
 }
 
 /* ---------------- Tasks ---------------- */
-function Tasks({ c, tasks, admin, enrolled, tstat, onSubmit }: { c: Contest; tasks: Task[]; admin: boolean; enrolled: boolean; tstat: string; onSubmit: () => void }) {
+function Tasks({ c, tasks, admin, enrolled, tstat, onSubmit, onRefresh }: { c: Contest; tasks: Task[]; admin: boolean; enrolled: boolean; tstat: string; onSubmit: () => void; onRefresh: () => void }) {
+  const [creating, setCreating] = useState(false)
   const canSubmit = enrolled && tstat === 'ONGOING' && c.status === 'ACTIVE'
+  if (c.contest_type === 'icpc') return <IcpcArena contest={c} tasks={tasks} canSubmit={canSubmit} admin={admin} onAddTask={() => setCreating(true)} />
+  if (c.contest_type === 'chess') return <ChessArena contest={c} tasks={tasks} canSubmit={canSubmit} />
+  if (c.contest_type === 'ctf') return <CtfArena contest={c} tasks={tasks} canSubmit={canSubmit} />
   return (
     <div className="grid">
+      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
+        <h3 style={{ margin: 0 }}>Tasks</h3>
+        {admin && <button className="btn primary sm" onClick={() => setCreating(true)}>Add New Task</button>}
+      </div>
       {tasks.length === 0 ? <div className="glass"><Empty icon="◲">No tasks published yet.</Empty></div> : (
         <div className="glass" style={{ overflow: 'hidden' }}>
           {tasks.map((t) => (
@@ -250,11 +262,11 @@ function Tasks({ c, tasks, admin, enrolled, tstat, onSubmit }: { c: Contest; tas
                 <p className="dim" style={{ margin: 0, fontSize: 13 }}>{t.description}</p>
                 <div className="schema">
                   <span className="label">payload</span>
-                  {t.submission_schema.required_keys.map((k) => (
-                    <span key={k} className={`chip ${t.submission_schema.numeric_keys.includes(k) ? 'num' : ''}`}>
-                      {k}{t.submission_schema.numeric_keys.includes(k) ? ' :num' : ''}
-                    </span>
-                  ))}
+                    {t.submission_schema.required_keys?.map((k) => (
+                      <span key={k} className={`chip ${t.submission_schema.numeric_keys?.includes(k) ? 'num' : ''}`}>
+                        {k}{t.submission_schema.numeric_keys?.includes(k) ? ' :num' : ''}
+                      </span>
+                    ))}
                   {t.submission_cooldown_seconds > 0 && <span className="chip">⏱ {t.submission_cooldown_seconds}s</span>}
                 </div>
               </div>
@@ -266,9 +278,87 @@ function Tasks({ c, tasks, admin, enrolled, tstat, onSubmit }: { c: Contest; tas
           ))}
         </div>
       )}
-      {admin && <div className="notice">Task creation & editing endpoints are wired (POST/PUT/DELETE /tasks) — add a builder here as a next step.</div>}
+      {creating && <CreateTaskModal contestId={c.id} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); onRefresh(); }} />}
     </div>
   )
+}
+
+const CODE_TEMPLATES: Record<string, string> = {
+  python: '# Read input\n# Solve the problem\n\ndef solve():\n    pass\n\nif __name__ == "__main__":\n    solve()\n',
+  cpp: '#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n    // solve\n    return 0;\n}\n',
+  java: 'import java.io.*;\nimport java.util.*;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        // solve\n    }\n}\n',
+}
+
+function IcpcArena({ contest, tasks, canSubmit, admin, onAddTask }: { contest: Contest; tasks: Task[]; canSubmit: boolean; admin: boolean; onAddTask: () => void }) {
+  const [activeId, setActiveId] = useState(tasks[0]?.id)
+  const [language, setLanguage] = useState('python')
+  const [code, setCode] = useState(CODE_TEMPLATES.python)
+  const [status, setStatus] = useState<'idle' | 'queued'>('idle')
+  const toast = useToast()
+  const active = tasks.find((t) => t.id === activeId) || tasks[0]
+  const selectProblem = (task: Task) => { setActiveId(task.id); setStatus('idle') }
+  const changeLanguage = (next: string) => { setLanguage(next); setCode(CODE_TEMPLATES[next]) }
+  async function submitCode() {
+    if (!code.trim()) return toast('Write a solution before submitting.', 'err')
+    if (!canSubmit) return toast('Only enrolled participants can submit while the contest is active.', 'err')
+    try {
+      const result = await submissionApi.create(contest.id, active.id, { source_code: code, language })
+      setStatus('queued')
+      toast(`Submission #${result.submission_id} added to the judge queue`, 'info')
+    } catch (e) { toast(apiError(e), 'err') }
+  }
+  if (!active) return <div className="glass"><Empty>No problems published yet.</Empty></div>
+  return <div className="code-arena">
+    <aside className="problem-rail">
+      <div className="rail-head"><div><span className="label">Problem set</span><b>{tasks.length} problems</b></div>{admin && <button className="btn ghost sm" onClick={onAddTask}>＋ Add</button>}</div>
+      <div className="problem-list">{tasks.map((task) => <button key={task.id} className={`problem-link ${task.id === active.id ? 'active' : ''}`} onClick={() => selectProblem(task)}><span className="problem-letter">{String.fromCharCode(64 + task.task_order)}</span><span><b>{task.title.replace(/^[A-J]\.\s*/, '')}</b><small>{task.max_score} points</small></span><i>{task.id === active.id ? '›' : ''}</i></button>)}</div>
+      <div className="rail-foot"><span className="live-dot" /> Live contest workspace</div>
+    </aside>
+    <main className="problem-pane">
+      <div className="problem-toolbar"><div className="wrap-row"><span className="difficulty">ALGORITHM</span><span className="mono faint">Problem {String.fromCharCode(64 + active.task_order)}</span></div><div className="wrap-row"><button className="btn ghost sm" onClick={() => navigator.clipboard?.writeText(active.title).then(() => toast('Problem title copied', 'info')).catch(() => {})}>⧉ Share</button><span className="pill tag-gold">{active.max_score} pts</span></div></div>
+      <article className="problem-statement"><h2>{active.title}</h2><p className="lead">{active.description}</p><div className="statement-grid"><section><h4>Input</h4><p>Read the input from standard input. Handle the stated constraints efficiently.</p></section><section><h4>Output</h4><p>Write the required answer to standard output for every valid test case.</p></section></div><section className="constraint-box"><span>⌘</span><div><b>Contest note</b><p>Your solution is judged asynchronously. Use the editor to submit; standings update once the worker records a verdict.</p></div></section></article>
+    </main>
+    <section className="editor-pane">
+      <div className="editor-toolbar"><div className="file-tab"><span className="file-dot" />solution.{language === 'python' ? 'py' : language === 'cpp' ? 'cpp' : 'java'}</div><select aria-label="Language" value={language} onChange={(e) => changeLanguage(e.target.value)}><option value="python">Python 3</option><option value="cpp">C++17</option><option value="java">Java 21</option></select></div>
+      <div className="editor-wrap"><div className="line-numbers">{Array.from({ length: Math.max(12, code.split('\n').length) }, (_, i) => <span key={i}>{i + 1}</span>)}</div><textarea aria-label="Solution editor" value={code} onChange={(e) => { setCode(e.target.value); setStatus('idle') }} spellCheck={false} /></div>
+      <div className="editor-footer"><span className={`judge-state ${status === 'queued' ? 'queued' : ''}`}>{status === 'queued' ? '● Queued for judging' : '● Ready to submit'}</span><div className="row"><button className="btn ghost sm" onClick={() => setCode(CODE_TEMPLATES[language])}>Reset</button><button className="btn primary" onClick={submitCode}>Submit solution →</button></div></div>
+    </section>
+  </div>
+}
+
+function ChessArena({ contest, tasks, canSubmit }: { contest: Contest; tasks: Task[]; canSubmit: boolean }) {
+  return <div><div className="notice" style={{ marginBottom: 16 }}>♟ Puzzle arena — find checkmate directly on the board. A completed mating line is sent to the judge queue.</div><div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))' }}>{tasks.map((task) => <ChessLevel key={task.id} contest={contest} task={task} canSubmit={canSubmit} />)}</div></div>
+}
+
+function ChessLevel({ contest, task, canSubmit }: { contest: Contest; task: Task; canSubmit: boolean }) {
+  const [game, setGame] = useState(() => new Chess('7k/6pp/8/7Q/8/8/6PP/6K1 w - - 0 1'))
+  const [sent, setSent] = useState(false)
+  const toast = useToast()
+  function onDrop({ sourceSquare, targetSquare }: { sourceSquare: string; targetSquare: string | null }) {
+    if (!targetSquare || sent) return false
+    const next = new Chess(game.fen())
+    const move = next.move({ from: sourceSquare, to: targetSquare, promotion: 'q' })
+    if (!move) return false
+    setGame(next)
+    if (next.isCheckmate()) {
+      if (!canSubmit) toast('You found mate! Enroll or wait for the contest to become active to submit.', 'info')
+      else submissionApi.create(contest.id, task.id, { moves: next.history(), fen: next.fen() }).then(() => { setSent(true); toast(`${task.title} solved — sent to judge queue`) }).catch((e) => toast(apiError(e), 'err'))
+    }
+    return true
+  }
+  return <div className="glass pad"><div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}><div><div className="label">Level {task.task_order}</div><h3 style={{ margin: '4px 0' }}>{task.title}</h3></div><span className="pill tag-gold">{task.max_score} pts</span></div><p className="dim" style={{ fontSize: 13 }}>{task.description}</p><Chessboard options={{ position: game.fen(), onPieceDrop: onDrop, boardOrientation: 'white' }} /><div className="row" style={{ justifyContent: 'space-between', marginTop: 12 }}><span className="mono faint" style={{ fontSize: 11 }}>{game.history().join(' ') || 'White to move'}</span><button className="btn ghost sm" onClick={() => { setGame(new Chess('7k/6pp/8/7Q/8/8/6PP/6K1 w - - 0 1')); setSent(false) }}>Reset</button></div>{sent && <div className="notice" style={{ marginTop: 10 }}>✓ Checkmate found. Submission queued.</div>}</div>
+}
+
+function CtfArena({ contest, tasks, canSubmit }: { contest: Contest; tasks: Task[]; canSubmit: boolean }) {
+  return <div><div className="notice blue" style={{ marginBottom: 16 }}>🚩 Beginner CTF lab — these are safe, self-contained learning challenges. Find the flag and submit it.</div><div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>{tasks.map((task) => <CtfChallenge key={task.id} contest={contest} task={task} canSubmit={canSubmit} />)}</div></div>
+}
+
+function CtfChallenge({ contest, task, canSubmit }: { contest: Contest; task: Task; canSubmit: boolean }) {
+  const [flag, setFlag] = useState('')
+  const [sent, setSent] = useState(false)
+  const toast = useToast()
+  async function submitFlag() { if (!flag.trim()) return toast('Enter a flag first', 'err'); if (!canSubmit) return toast('Enroll or wait for the contest to become active.', 'err'); try { await submissionApi.create(contest.id, task.id, { flag: flag.trim() }); setSent(true); toast(`${task.title} queued for judging`) } catch (e) { toast(apiError(e), 'err') } }
+  return <div className="glass pad"><div className="label">Challenge {task.task_order}</div><h3 style={{ margin: '5px 0 9px' }}>{task.title}</h3><p className="dim" style={{ minHeight: 58, fontSize: 13 }}>{task.description}</p><div className="field" style={{ margin: 0 }}><label>Flag</label><input value={flag} onChange={(e) => setFlag(e.target.value)} placeholder="CTFDB{...}" /></div><button className="btn primary block" style={{ marginTop: 12 }} disabled={sent} onClick={submitFlag}>{sent ? 'Queued for judging' : 'Submit flag'}</button></div>
 }
 
 /* ---------------- Leaderboard ---------------- */

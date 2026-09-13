@@ -55,9 +55,9 @@ export function Modal({ title, subtitle, onClose, children, footer }: {
 }) {
   return (
     <AnimatePresence>
-      <motion.div className="overlay" onClick={onClose}
+      <motion.div className="overlay"
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-        <motion.div className="glass glass-strong modal" onClick={(e) => e.stopPropagation()}
+        <motion.div className="glass glass-strong modal"
           initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 8 }} transition={{ type: 'spring', stiffness: 380, damping: 30 }}>
           <header>

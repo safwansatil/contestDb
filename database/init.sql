@@ -10,11 +10,13 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
+    is_developer BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
--- Fallback to add password_hash if users table already existed
+-- Fallback to add columns if users table already existed
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_developer BOOLEAN DEFAULT FALSE;
 
 -- 2. Contests Table
 --    max_participants: NULL means unlimited enrollment cap.
@@ -31,6 +33,9 @@ CREATE TABLE IF NOT EXISTS contests (
     invitation_code VARCHAR(50),
     max_participants INT,                           -- NULL = unlimited; > 0 enforced by CHECK
     allow_late_enrollment BOOLEAN DEFAULT TRUE NOT NULL,
+    contest_type VARCHAR(50) DEFAULT 'custom' NOT NULL, -- 'leetcode', 'chess', 'custom'
+    judge_webhook_url VARCHAR(255),                 -- Webhook endpoint for the contest judge
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT chk_contest_times CHECK (freeze_time >= start_time AND end_time >= freeze_time),
     CONSTRAINT chk_contest_status CHECK (status IN ('PENDING_APPROVAL', 'ACTIVE', 'COMPLETED')),
     CONSTRAINT chk_max_participants CHECK (max_participants IS NULL OR max_participants > 0)
@@ -42,6 +47,9 @@ ALTER TABLE contests ADD COLUMN IF NOT EXISTS judging_description TEXT;
 ALTER TABLE contests ADD COLUMN IF NOT EXISTS invitation_code VARCHAR(50);
 ALTER TABLE contests ADD COLUMN IF NOT EXISTS max_participants INT;
 ALTER TABLE contests ADD COLUMN IF NOT EXISTS allow_late_enrollment BOOLEAN DEFAULT TRUE NOT NULL;
+ALTER TABLE contests ADD COLUMN IF NOT EXISTS contest_type VARCHAR(50) DEFAULT 'custom' NOT NULL;
+ALTER TABLE contests ADD COLUMN IF NOT EXISTS judge_webhook_url VARCHAR(255);
+ALTER TABLE contests ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
 ALTER TABLE contests DROP CONSTRAINT IF EXISTS chk_contest_status;
 ALTER TABLE contests ADD CONSTRAINT chk_contest_status CHECK (status IN ('PENDING_APPROVAL', 'ACTIVE', 'COMPLETED'));
 ALTER TABLE contests DROP CONSTRAINT IF EXISTS chk_max_participants;
@@ -98,6 +106,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     submission_schema JSONB NOT NULL,               -- Mandatory: every task must declare its payload schema
     submission_cooldown_seconds INT DEFAULT 0 NOT NULL,
     task_order INT DEFAULT 0 NOT NULL,
+    webhook_url VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT chk_task_cooldown CHECK (submission_cooldown_seconds >= 0),
     CONSTRAINT chk_task_order CHECK (task_order >= 0)
@@ -107,6 +116,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS submission_schema JSONB;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS submission_cooldown_seconds INT DEFAULT 0 NOT NULL;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS task_order INT DEFAULT 0 NOT NULL;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS webhook_url VARCHAR(255);
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS chk_task_cooldown;
 ALTER TABLE tasks ADD CONSTRAINT chk_task_cooldown CHECK (submission_cooldown_seconds >= 0);
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS chk_task_order;
@@ -151,6 +161,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     status VARCHAR(20) DEFAULT 'PENDING' NOT NULL, -- 'PENDING', 'JUDGING', 'COMPLETED', 'FAILED'
     score NUMERIC DEFAULT 0 NOT NULL,              -- Standardized evaluation output written by judge worker
     verdict VARCHAR(50),                           -- Standardized evaluation description (e.g. 'AC', 'WA', 'RUN_SUCCESS')
+    judge_response JSONB,                          -- Full response payload from external webhook judge
     submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     judged_at TIMESTAMP WITH TIME ZONE,
     judged_by VARCHAR(50),                         -- Identifies the judging worker instance
@@ -159,6 +170,7 @@ CREATE TABLE IF NOT EXISTS submissions (
 
 -- Fallbacks if table already existed
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS task_id INT REFERENCES tasks(id) ON DELETE CASCADE;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS judge_response JSONB;
 ALTER TABLE submissions
     ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMP WITH TIME ZONE;
 
@@ -215,6 +227,22 @@ CREATE TABLE IF NOT EXISTS contest_announcements (
     posted_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
+-- A host can request a new/customized format before a real contest exists.
+CREATE TABLE IF NOT EXISTS contest_type_requests (
+    id                SERIAL PRIMARY KEY,
+    requester_id      INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    requested_type    VARCHAR(80) NOT NULL,
+    title             VARCHAR(120) NOT NULL,
+    rules_description TEXT NOT NULL,
+    requested_tasks   TEXT,
+    status            VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    developer_note    TEXT,
+    reviewed_by       INT REFERENCES users(id) ON DELETE SET NULL,
+    created_at        TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    reviewed_at       TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT chk_format_request_status CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED'))
+);
+
 -- Indices for faster lookups and queuing
 CREATE INDEX IF NOT EXISTS idx_submissions_queue       ON submissions(submitted_at ASC) WHERE status = 'PENDING';
 CREATE INDEX IF NOT EXISTS idx_submissions_contest     ON submissions(contest_id);
@@ -227,6 +255,7 @@ CREATE INDEX IF NOT EXISTS idx_submissions_contest_time ON submissions(contest_i
 CREATE INDEX IF NOT EXISTS idx_tasks_order             ON tasks(contest_id, task_order ASC);
 CREATE INDEX IF NOT EXISTS idx_kick_log_contest        ON kick_log(contest_id, kicked_user_id);
 CREATE INDEX IF NOT EXISTS idx_announcements_contest   ON contest_announcements(contest_id, posted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_format_requests_status  ON contest_type_requests(status, created_at DESC);
 
 -- Trigram index for user search (v0.6.0)
 CREATE INDEX IF NOT EXISTS idx_users_username_trgm     ON users USING gin (username gin_trgm_ops);

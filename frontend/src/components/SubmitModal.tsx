@@ -5,7 +5,7 @@ import { verdictClass, verdictColor } from '../lib/format'
 import { useAuth } from '../lib/auth'
 import { useToast } from '../lib/toast'
 import { Modal, Spinner } from './ui'
-
+import { ChessSubmissionUI } from './ChessSubmissionUI'
 type Phase = 'form' | 'PENDING' | 'JUDGING' | 'done'
 
 export function SubmitModal({ contest, tasks, initialTask, onClose, onJudged }: {
@@ -39,10 +39,27 @@ export function SubmitModal({ contest, tasks, initialTask, onClose, onJudged }: 
 
   async function submit() {
     const payload: Record<string, unknown> = {}
-    for (const k of task.submission_schema.required_keys) {
-      const raw = values[k]
-      if (raw == null || raw === '') { toast(`Missing required field: ${k}`, 'err'); return }
-      payload[k] = task.submission_schema.numeric_keys.includes(k) ? Number(raw) : raw
+    
+    // For MVP, if it's leetcode, we expect source_code. If chess, we expect pgn.
+    if (contest.contest_type === 'icpc') {
+      if (!values.source_code) return toast('Missing source code', 'err')
+      payload.source_code = values.source_code
+      payload.language = values.language || 'python'
+    } else if (contest.contest_type === 'chess') {
+      if (!values.pgn) return toast('Make a move to generate PGN', 'err')
+      payload.pgn = values.pgn
+      // The worker currently expects "fen" and "move" for the MVP chess judge
+      // But the ChessSubmissionUI yields PGN. Let's send pgn, fen, and move.
+      // Wait, we need to adapt what we send to match the MVP judge requirements.
+      // The judge expects fen and move.
+      payload.fen = values.fen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      payload.move = values.move || "e4"
+    } else {
+      for (const k of task.submission_schema?.required_keys || []) {
+        const raw = values[k]
+        if (raw == null || raw === '') { toast(`Missing required field: ${k}`, 'err'); return }
+        payload[k] = task.submission_schema?.numeric_keys?.includes(k) ? Number(raw) : raw
+      }
     }
     setPhase('PENDING')
     try {
@@ -112,14 +129,38 @@ export function SubmitModal({ contest, tasks, initialTask, onClose, onJudged }: 
           {tasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
         </select>
       </div>
-      {task.submission_schema.required_keys.map((k) => {
-        const numeric = task.submission_schema.numeric_keys.includes(k)
+
+      {contest.contest_type === 'icpc' && (
+        <>
+          <div className="field">
+            <label>Language</label>
+            <select value={values.language || 'python'} onChange={(e) => setVal('language', e.target.value)}>
+              <option value="python">Python 3</option>
+              <option value="cpp">C++</option>
+              <option value="java">Java</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Source Code</label>
+            <textarea rows={8} value={values.source_code || ''} onChange={(e) => setVal('source_code', e.target.value)} placeholder="def solve():\n    pass" style={{ fontFamily: 'monospace' }} />
+          </div>
+        </>
+      )}
+
+      {contest.contest_type === 'chess' && (
+        <ChessSubmissionUI onMove={(pgn: string, fen?: string, move?: string) => {
+          setVal('pgn', pgn)
+          if (fen) setVal('fen', fen)
+          if (move) setVal('move', move)
+        }} />
+      )}
+
+      {!['icpc', 'chess'].includes(contest.contest_type) && task.submission_schema?.required_keys?.map((k: string) => {
+        const numeric = task.submission_schema?.numeric_keys?.includes(k)
         return (
           <div className="field" key={k}>
             <label>{k} <span className={`chip ${numeric ? 'num' : ''}`} style={{ fontSize: 10 }}>{numeric ? 'number' : 'text'}</span></label>
-            {k === 'source_code'
-              ? <textarea rows={5} value={values[k] || ''} onChange={(e) => setVal(k, e.target.value)} placeholder="paste your code…" />
-              : <input type={numeric ? 'number' : 'text'} step="any" value={values[k] || ''} onChange={(e) => setVal(k, e.target.value)} placeholder={numeric ? '0' : 'value'} />}
+            <input type={numeric ? 'number' : 'text'} step="any" value={values[k] || ''} onChange={(e) => setVal(k, e.target.value)} placeholder={numeric ? '0' : 'value'} />
           </div>
         )
       })}

@@ -35,6 +35,54 @@ This project adheres to Semantic Versioning and matches commits/tasks with GitHu
 - **Participant Dashboard Integration Tests** — Added `database/tests/test_participant_dashboard.py` covering authentication, response structure, participant-role filtering, recent-submission ownership, and the five-submission limit.
 - **Documentation** — Updated `docs/manual_testing.md` and `docs/architecture_and_erd.md` with the endpoint verification procedure and database-native request flow.
 
+## [0.10.0] - 2026-08-15 (Agnostic Contest Platform MVP - Chess & LeetCode)
+### Added
+* Added `contest_type` (`custom`, `chess`, `leetcode`) and `judge_webhook_url` to the `contests` table.
+* Added `judge_response` JSONB to the `submissions` table to store full webhook payloads.
+* Built-in Mock Webhook Judges at `POST /api/v1/judges/leetcode` and `POST /api/v1/judges/chess` inside the FastAPI `main.py` routing.
+* Worker now dispatches strictly to the Webhook Contract (`contest_id`, `contest_type`, `submission_id`, `participant_id`, `payload`) and immediately stores the response if synchronous.
+* Modified task creation: `submission_schema` is now optional and auto-populated based on the `contest_type`.
+* Seeded Contest 3 ("MVP Chess Match") and Contest 4 ("MVP LeetCode Contest").
+
+---
+
+## [0.9.1] - 2026-08-15 (Contests Table Schema Hotfix)
+### Fixed
+* Added `created_at` timestamp column to the `contests` table in `database/init.sql` to resolve a crashing SQL query in `/dev/contests` that prevented the developer dashboard from loading contests.
+
+---
+
+## [0.9.0] - 2026-08-15 (Developer Dashboard & Contest Format Pivot)
+### Added
+* Added `is_developer` flag to the `users` table to permanently distinguish system administrators from regular users.
+* Seeded new users `safwansatil` (Developer), `saytas`, and `zoldyck`.
+* Created `DeveloperDashboard.tsx` at `/dev` providing a dedicated interface for developers to view all contests, configure task webhooks and JSON schemas, and approve contests.
+* Created `dev_routes.py` (integrated into `main.py`) exposing secured `/dev/contests`, `/dev/contests/{id}/approve`, and `/dev/tasks/{task_id}/config` endpoints.
+* Updated `manual_testing.md` to document the separated Host (creating formats) and Developer (configuring tech) workflows.
+
+### Changed
+* Refactored `CreateContestModal.tsx` for Hosts. Replaced the technical "Ranking Strategy" dropdown with a simplified "Contest Format" selector (ICPC Coding Tournament vs Chess Match) which auto-assigns the strategy.
+* Refactored `CreateTaskModal.tsx` for Hosts. Removed the `webhook_url` and `submission_schema` inputs. Hosts now only provide Title, Description, and Score. The Developer configures the rest later.
+* Prevented developers from enrolling in or creating contests (enforced via DB constraints and UI).
+* Hid the "Host a contest" button in the frontend if the logged-in user is a developer.
+
+---
+
+## [0.8.0] - 2026-08-15 (Async Webhook Execution Delegation)
+### Added
+* **Webhook URL Support for Tasks** — Added `webhook_url VARCHAR(255)` column to the `tasks` table in [init.sql](database/init.sql). Tasks can now specify an external webhook URL for asynchronous judging.
+* **Database-Native Async Result Callback** — Added `update_submission_result_native` function to [procedures.sql](database/procedures.sql) allowing async webhook judges to write back scores and verdicts safely.
+* **API Webhook Callback Endpoint** — Created `POST /submissions/{id}/callback` in [main.py](backend/app/main.py) to receive execution results from external evaluator webhook endpoints.
+* **Asynchronous Execution Dispatch** — Refactored `worker.py` to seamlessly dispatch submissions to external webhooks (if a `webhook_url` is configured) while keeping the mock local fallback evaluation intact for regular tasks.
+* **Webhook Automation Tests** — Wrote explicit E2E tests in `database/tests/test_webhook_async.py` covering the full asynchronous execution cycle from enqueue to callback.
+
+### Changed
+* Updated `TaskCreateRequest` in [main.py](backend/app/main.py) to accept an optional `webhook_url`.
+* Updated `add_task_native` and `update_task_native` in [procedures.sql](database/procedures.sql) to receive and store `webhook_url`.
+* Updated `claim_submission` to return the associated task's `webhook_url` to the polling worker.
+
+---
+
 ## [0.7.1] - 2026-08-06 (Security Hardening: Leaderboard Freeze & Submission Timing)
 ### Fixed
 * **[#15] Privilege Escalation via Type Coercion in `get_user_contest_history`** — The `get_user_contest_history` PL/pgSQL function in [procedures.sql](database/procedures.sql) called `get_leaderboard(ec.contest_id, TRUE)` with a literal boolean `TRUE` as the viewer ID. PostgreSQL silently casts `TRUE` to integer `1`, making every call to `/users/{id}/history` treat user ID 1 (sayma) as the viewer — thereby granting admin-level (unfreeze-bypassing) leaderboard access to every user's contest history. Fixed by changing `TRUE` to `NULL`, which instructs `get_leaderboard` to use the public/frozen visibility path for all history lookups. This is correct: contest history always shows final public standings.

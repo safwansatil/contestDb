@@ -1,4 +1,5 @@
 import os
+import os
 import sys
 import asyncio
 import logging
@@ -91,6 +92,15 @@ async def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] 
         sys.stdout.flush()
         return None
 
+async def get_developer_user(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT is_developer FROM users WHERE id = %s", (user["user_id"],))
+            row = await cur.fetchone()
+            if not row or not row[0]:
+                raise HTTPException(status_code=403, detail="Developer access required")
+    return user
+
 # Pydantic Schemas for validation
 class AuthRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, description="Username (alphanumeric, underscores, hyphens)")
@@ -120,17 +130,20 @@ class ContestCreateRequest(BaseModel):
     judging_description: str = Field(..., min_length=5)
     max_participants: Optional[int] = Field(None, ge=1, description="Max participant cap. NULL = unlimited.")
     allow_late_enrollment: bool = Field(True, description="If False, enrollment is blocked after start_time.")
+    contest_type: str = Field("custom", description="leetcode, chess, or custom")
+    judge_webhook_url: Optional[str] = Field(None, description="Webhook endpoint for the contest judge")
 
 class TaskCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1)
     max_score: float = Field(100.0, ge=0.0)
-    submission_schema: Dict[str, Any] = Field(
-        ...,
-        description="Required JSONB schema descriptor for submission_data validation."
+    submission_schema: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional JSONB schema descriptor. Will be auto-generated for chess/leetcode."
     )
     submission_cooldown_seconds: int = Field(0, ge=0)
     task_order: int = Field(0, ge=0)
+    webhook_url: Optional[str] = Field(None, description="Optional external judge webhook URL")
     tags: List[str] = Field(default_factory=list)
 
 class EnrollRequest(BaseModel):
@@ -161,6 +174,23 @@ class AnnouncementCreateRequest(BaseModel):
 
 class KickParticipantRequest(BaseModel):
     reason: Optional[str] = None
+
+class ContestTypeRequestCreate(BaseModel):
+    requested_type: str = Field(..., min_length=3, max_length=80)
+    title: str = Field(..., min_length=3, max_length=120)
+    rules_description: str = Field(..., min_length=10)
+    requested_tasks: Optional[str] = Field(None, max_length=2000)
+
+class ContestTypeRequestDecision(BaseModel):
+    decision: str
+    developer_note: Optional[str] = Field(None, max_length=1000)
+
+    @field_validator("decision")
+    @classmethod
+    def validate_decision(cls, value: str) -> str:
+        if value not in ("APPROVED", "REJECTED"):
+            raise ValueError("Decision must be APPROVED or REJECTED")
+        return value
 
 # Lifecycle Event Handlers
 @app.on_event("startup")
@@ -210,7 +240,8 @@ async def signup(payload: AuthRequest):
                     "user": {
                         "id": user_id,
                         "username": username,
-                        "created_at": created_at
+                        "created_at": created_at,
+                        "is_developer": False
                     }
                 }
             except Exception as e:
@@ -240,13 +271,19 @@ async def login(payload: AuthRequest):
                 )
             
             user_id, username = row
+            
+            await cur.execute("SELECT is_developer FROM users WHERE id = %s", (user_id,))
+            is_dev_row = await cur.fetchone()
+            is_developer = is_dev_row[0] if is_dev_row else False
+            
             token = create_access_token(user_id, username)
             return {
                 "access_token": token,
                 "token_type": "bearer",
                 "user": {
                     "id": user_id,
-                    "username": username
+                    "username": username,
+                    "is_developer": is_developer
                 }
             }
 
@@ -255,9 +292,16 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     Verify access token and return user profile details.
     """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT is_developer FROM users WHERE id = %s", (current_user["user_id"],))
+            row = await cur.fetchone()
+            is_developer = row[0] if row else False
+            
     return {
         "id": current_user["user_id"],
-        "username": current_user["username"]
+        "username": current_user["username"],
+        "is_developer": is_developer
     }
 
 # Contest Endpoints
@@ -285,7 +329,7 @@ async def get_contests(
             contests = []
             for row in rows:
                 (c_id, title, ranking, start, freeze, end, status_val, judging_desc, inv_code, role,
-                 max_p, allow_late, show_pc, show_lb, show_ml, show_tl, show_st, show_sc) = row
+                 max_p, allow_late, show_pc, show_lb, show_ml, show_tl, show_st, show_sc, contest_type, webhook_url) = row
                 has_code = inv_code is not None and inv_code != ""
                 is_admin = role in ("HOST", "MODERATOR")
                 contests.append({
@@ -302,6 +346,8 @@ async def get_contests(
                     "user_role": role,
                     "max_participants": max_p,
                     "allow_late_enrollment": allow_late,
+                    "contest_type": contest_type,
+                    "judge_webhook_url": webhook_url,
                     "visibility": {
                         "show_participant_count": show_pc if show_pc is not None else True,
                         "show_leaderboard": show_lb if show_lb is not None else True,
@@ -327,7 +373,8 @@ async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = 
                        c.status, c.judging_description, c.invitation_code, e.role,
                        c.max_participants, c.allow_late_enrollment,
                        cv.show_participant_count, cv.show_leaderboard, cv.show_member_list,
-                       cv.show_task_list, cv.show_statistics, cv.show_submission_count
+                       cv.show_task_list, cv.show_statistics, cv.show_submission_count,
+                       c.contest_type, c.judge_webhook_url
                 FROM contests c
                 LEFT JOIN enrollments e ON c.id = e.contest_id AND e.user_id = %s
                 LEFT JOIN contest_visibility cv ON c.id = cv.contest_id
@@ -340,7 +387,7 @@ async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = 
                 raise HTTPException(status_code=404, detail="Contest not found")
 
             (c_id, title, ranking, start, freeze, end, status, judging_desc, inv_code, role,
-             max_p, allow_late, show_pc, show_lb, show_ml, show_tl, show_st, show_sc) = row
+             max_p, allow_late, show_pc, show_lb, show_ml, show_tl, show_st, show_sc, contest_type, webhook_url) = row
             has_code = inv_code is not None and inv_code != ""
             is_admin = role in ("HOST", "MODERATOR")
 
@@ -358,6 +405,8 @@ async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = 
                 "user_role": role,
                 "max_participants": max_p,
                 "allow_late_enrollment": allow_late,
+                "contest_type": contest_type,
+                "judge_webhook_url": webhook_url,
                 "visibility": {
                     "show_participant_count": show_pc if show_pc is not None else True,
                     "show_leaderboard": show_lb if show_lb is not None else True,
@@ -378,7 +427,7 @@ async def create_contest(payload: ContestCreateRequest, current_user: Dict[str, 
         async with conn.cursor() as cur:
             try:
                 await cur.execute(
-                    "SELECT create_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                    "SELECT create_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                     (
                         payload.title,
                         payload.ranking_strategy,
@@ -389,7 +438,9 @@ async def create_contest(payload: ContestCreateRequest, current_user: Dict[str, 
                         payload.judging_description,
                         creator_id,
                         payload.max_participants,
-                        payload.allow_late_enrollment
+                        payload.allow_late_enrollment,
+                        payload.contest_type,
+                        payload.judge_webhook_url
                     )
                 )
                 row = await cur.fetchone()
@@ -418,7 +469,7 @@ async def update_contest(contest_id: int, payload: ContestCreateRequest, current
         async with conn.cursor() as cur:
             try:
                 await cur.execute(
-                    "SELECT update_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                    "SELECT update_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                     (
                         contest_id,
                         user_id,
@@ -430,7 +481,9 @@ async def update_contest(contest_id: int, payload: ContestCreateRequest, current
                         payload.invitation_code,
                         payload.judging_description,
                         payload.max_participants,
-                        payload.allow_late_enrollment
+                        payload.allow_late_enrollment,
+                        payload.contest_type,
+                        payload.judge_webhook_url
                     )
                 )
                 await conn.commit()
@@ -550,14 +603,26 @@ async def create_task(contest_id: int, payload: TaskCreateRequest, current_user:
     async with get_db_connection() as conn:
         async with conn.cursor() as cur:
             try:
+                if payload.submission_schema is None:
+                    await cur.execute("SELECT contest_type FROM contests WHERE id = %s", (contest_id,))
+                    ctype_row = await cur.fetchone()
+                    ctype = ctype_row[0] if ctype_row else "custom"
+                    if ctype == "chess":
+                        payload.submission_schema = {"required_keys": ["fen", "move"]}
+                    elif ctype == "leetcode":
+                        payload.submission_schema = {"required_keys": ["language_id", "source_code"]}
+                    else:
+                        payload.submission_schema = {}
+
                 import json as _json
                 await cur.execute(
-                    "SELECT add_task_native(%s, %s, %s, %s, %s, %s::jsonb, %s, %s);",
+                    "SELECT add_task_native(%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s);",
                     (
                         contest_id, user_id, payload.title, payload.description, payload.max_score,
                         _json.dumps(payload.submission_schema),
                         payload.submission_cooldown_seconds,
-                        payload.task_order
+                        payload.task_order,
+                        payload.webhook_url
                     )
                 )
                 row = await cur.fetchone()
@@ -587,14 +652,32 @@ async def update_task(task_id: int, payload: TaskCreateRequest, current_user: Di
     async with get_db_connection() as conn:
         async with conn.cursor() as cur:
             try:
+                await cur.execute("SELECT contest_id FROM tasks WHERE id = %s", (task_id,))
+                c_row = await cur.fetchone()
+                c_id = c_row[0] if c_row else None
+                
+                if payload.submission_schema is None and c_id is not None:
+                    await cur.execute("SELECT contest_type FROM contests WHERE id = %s", (c_id,))
+                    ctype_row = await cur.fetchone()
+                    ctype = ctype_row[0] if ctype_row else "custom"
+                    if ctype == "chess":
+                        payload.submission_schema = {"required_keys": ["fen", "move"]}
+                    elif ctype == "leetcode":
+                        payload.submission_schema = {"required_keys": ["language_id", "source_code"]}
+                    else:
+                        payload.submission_schema = {}
+                elif payload.submission_schema is None:
+                    payload.submission_schema = {}
+
                 import json as _json
                 await cur.execute(
-                    "SELECT update_task_native(%s, %s, %s, %s, %s, %s::jsonb, %s, %s);",
+                    "SELECT update_task_native(%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s);",
                     (
                         task_id, user_id, payload.title, payload.description, payload.max_score,
                         _json.dumps(payload.submission_schema),
                         payload.submission_cooldown_seconds,
-                        payload.task_order
+                        payload.task_order,
+                        payload.webhook_url
                     )
                 )
                 await cur.execute(
@@ -728,6 +811,31 @@ async def list_users(current_user: Dict[str, Any] = Depends(get_current_user)):
             rows = await cur.fetchall()
             return [{"id": r[0], "username": r[1]} for r in rows]
 
+@app.post("/contest-type-requests", status_code=status.HTTP_201_CREATED)
+async def create_contest_type_request(payload: ContestTypeRequestCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("SELECT create_contest_type_request_native(%s, %s, %s, %s, %s);", (
+                    current_user["user_id"], payload.requested_type, payload.title, payload.rules_description, payload.requested_tasks,
+                ))
+                row = await cur.fetchone()
+                await conn.commit()
+                return {"message": "Format request sent to the developer queue", "request_id": row[0]}
+            except Exception as exc:
+                await conn.rollback()
+                raise HTTPException(status_code=400, detail=str(exc))
+
+@app.get("/contest-type-requests/mine")
+async def get_my_contest_type_requests(current_user: Dict[str, Any] = Depends(get_current_user)):
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("""SELECT id, requested_type, title, rules_description, requested_tasks, status, developer_note, created_at, reviewed_at
+                FROM contest_type_requests WHERE requester_id = %s ORDER BY created_at DESC""", (current_user["user_id"],))
+            rows = await cur.fetchall()
+            return [{"id": r[0], "requested_type": r[1], "title": r[2], "rules_description": r[3], "requested_tasks": r[4],
+                     "status": r[5], "developer_note": r[6], "created_at": r[7], "reviewed_at": r[8]} for r in rows]
+
 # Submission Endpoints
 @app.post("/submissions", status_code=status.HTTP_201_CREATED)
 async def create_submission(
@@ -790,6 +898,30 @@ async def create_submission(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=error_message,
                 )
+
+class WebhookCallbackRequest(BaseModel):
+    score: float
+    verdict: str
+    judged_by: str = "webhook"
+
+@app.post("/submissions/{submission_id}/callback")
+async def submission_webhook_callback(submission_id: int, payload: WebhookCallbackRequest):
+    """
+    Callback endpoint for external judges to report evaluation results async.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT update_submission_result_native(%s, %s, %s, %s);",
+                    (submission_id, payload.score, payload.verdict, payload.judged_by)
+                )
+                await conn.commit()
+                return {"message": "Submission successfully judged by webhook."}
+            except Exception as e:
+                await conn.rollback()
+                logger.error(f"Error recording webhook callback for sub #{submission_id}: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/contests/{contest_id}/leaderboard")
 async def get_contest_leaderboard(
@@ -1596,3 +1728,93 @@ async def get_contest_profile(
             except Exception as e:
                 logger.error(f"Error fetching contest profile: {e}")
                 raise HTTPException(status_code=400, detail=str(e))
+# ============================================================
+# Developer Dashboard Endpoints
+# ============================================================
+
+class DevTaskConfig(BaseModel):
+    webhook_url: Optional[str] = None
+    submission_schema: Dict[str, Any]
+
+@app.get("/dev/contests")
+async def dev_get_contests(dev_user: Dict[str, Any] = Depends(get_developer_user)):
+    """
+    Developer view to list all contests including PENDING_APPROVAL.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT id, title, ranking_strategy, status, start_time, end_time, created_at 
+                FROM contests 
+                ORDER BY created_at DESC
+                """
+            )
+            rows = await cur.fetchall()
+            return [
+                {
+                    "id": r[0], "title": r[1], "ranking_strategy": r[2], 
+                    "status": r[3], "start_time": r[4], "end_time": r[5], "created_at": r[6]
+                }
+                for r in rows
+            ]
+
+@app.get("/dev/contest-type-requests")
+async def dev_get_contest_type_requests(dev_user: Dict[str, Any] = Depends(get_developer_user)):
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("""SELECT r.id, r.requested_type, r.title, r.rules_description, r.requested_tasks, r.status,
+                r.developer_note, r.created_at, u.username FROM contest_type_requests r JOIN users u ON u.id = r.requester_id
+                ORDER BY CASE WHEN r.status = 'PENDING' THEN 0 ELSE 1 END, r.created_at DESC""")
+            rows = await cur.fetchall()
+            return [{"id": r[0], "requested_type": r[1], "title": r[2], "rules_description": r[3], "requested_tasks": r[4],
+                     "status": r[5], "developer_note": r[6], "created_at": r[7], "requester": r[8]} for r in rows]
+
+@app.post("/dev/contest-type-requests/{request_id}/decision")
+async def dev_decide_contest_type_request(request_id: int, payload: ContestTypeRequestDecision, dev_user: Dict[str, Any] = Depends(get_developer_user)):
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("SELECT decide_contest_type_request_native(%s, %s, %s, %s);", (
+                    request_id, dev_user["user_id"], payload.decision, payload.developer_note,
+                ))
+                await conn.commit()
+                return {"message": f"Request {payload.decision.lower()}"}
+            except Exception as exc:
+                await conn.rollback()
+                raise HTTPException(status_code=400, detail=str(exc))
+
+@app.post("/dev/contests/{contest_id}/approve")
+async def dev_approve_contest(contest_id: int, dev_user: Dict[str, Any] = Depends(get_developer_user)):
+    """
+    Developer action to approve a pending contest.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE contests SET status = 'ACTIVE' WHERE id = %s AND status = 'PENDING_APPROVAL' RETURNING id",
+                (contest_id,)
+            )
+            row = await cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=400, detail="Contest is not pending approval or does not exist")
+            await conn.commit()
+            return {"message": "Contest approved and is now ACTIVE"}
+
+@app.put("/dev/tasks/{task_id}/config")
+async def dev_update_task_config(task_id: int, config: DevTaskConfig, dev_user: Dict[str, Any] = Depends(get_developer_user)):
+    """
+    Developer action to inject webhook_url and schema to a task.
+    """
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE tasks SET webhook_url = %s, submission_schema = %s::jsonb WHERE id = %s RETURNING id",
+                (config.webhook_url, json.dumps(config.submission_schema), task_id)
+            )
+            row = await cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Task not found")
+            await conn.commit()
+            return {"message": "Task dev config updated successfully"}
+
