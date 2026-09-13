@@ -876,7 +876,6 @@ function Manage({ c, onChange }: { c: Contest; onChange: () => void }) {
     </div>
   )
 }
-
 function RoleSelect({
   c,
   m,
@@ -889,56 +888,75 @@ function RoleSelect({
   onDone: () => void
 }) {
   const toast = useToast()
+  const [pendingRole, setPendingRole] = useState<string | null>(null)
+  const alreadyModerator = m.role === 'MODERATOR'
 
-  const alreadyModerator =
-    m.role === 'MODERATOR'
+  function requestChange(role: string) {
+    if (role === m.role) return
 
-  async function change(role: string) {
+    if (role === 'MODERATOR' && moderatorCapacityReached && !alreadyModerator) {
+      toast('Moderator capacity reached', 'err')
+      return
+    }
+
+    setPendingRole(role)
+  }
+
+  async function confirmChange() {
+    if (!pendingRole) return
+
     try {
-      await contestApi.setRole(
-        c.id,
-        m.user_id,
-        role,
-      )
-
-      toast(`Role updated to ${role}`)
+      await contestApi.setRole(c.id, m.user_id, pendingRole)
+      toast(`Role updated to ${pendingRole}`)
+      setPendingRole(null)
       onDone()
-    } catch (error) {
-      toast(apiError(error), 'err')
+    } catch (e) {
+      toast(apiError(e), 'err')
     }
   }
 
   return (
-    <select
-      aria-label={`Change ${m.username}'s role`}
-      style={{
-        width: 'auto',
-        padding: '6px 8px',
-        fontSize: 12,
-      }}
-      value={m.role || 'PARTICIPANT'}
-      onChange={(event) =>
-        change(event.target.value)
-      }
-    >
-      <option value="PARTICIPANT">
-        Participant
-      </option>
-
-      <option
-        value="MODERATOR"
-        disabled={
-          moderatorCapacityReached
-          && !alreadyModerator
-        }
+    <>
+      <select
+        aria-label={`Change ${m.username}'s role`}
+        style={{ width: 'auto', padding: '6px 8px', fontSize: 12 }}
+        value={m.role || 'PARTICIPANT'}
+        onChange={(e) => requestChange(e.target.value)}
       >
-        Moderator
-        {moderatorCapacityReached
-          && !alreadyModerator
-          ? ' — capacity reached'
-          : ''}
-      </option>
-    </select>
+        <option value="PARTICIPANT">Participant</option>
+
+        <option
+          value="MODERATOR"
+          disabled={moderatorCapacityReached && !alreadyModerator}
+        >
+          Moderator
+          {moderatorCapacityReached && !alreadyModerator
+            ? ' — capacity reached'
+            : ''}
+        </option>
+      </select>
+
+      {pendingRole && (
+        <Modal
+          title="Confirm role change"
+          onClose={() => setPendingRole(null)}
+          footer={
+            <>
+              <button className="btn ghost" onClick={() => setPendingRole(null)}>
+                No
+              </button>
+              <button className="btn primary" onClick={confirmChange}>
+                Yes
+              </button>
+            </>
+          }
+        >
+          <div className="notice">
+            Change {m.username}'s role to {pendingRole}?
+          </div>
+        </Modal>
+      )}
+    </>
   )
 }
 
@@ -953,7 +971,25 @@ function KickModal({ c, member, onClose, onKicked }: { c: Contest; member: Membe
   }
   return (
     <Modal title={`Remove ${member.username}?`} onClose={onClose}
-      footer={<><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn danger" onClick={kick} disabled={busy}>{busy ? <Spinner /> : 'Kick & ban'}</button></>}>
+      footer={
+        <>
+          <button
+            className="btn ghost"
+            onClick={onClose}
+          >
+            No
+          </button>
+
+          <button
+            className="btn danger"
+            onClick={kick}
+            disabled={busy}
+          >
+            {busy ? <Spinner /> : 'Yes'}
+          </button>
+        </>
+      }>    
+      
       <div className="notice" style={{ background: 'var(--wa-soft)', color: 'var(--wa)' }}>Permanently bans re-enrolling. Submissions are preserved for record integrity.</div>
       <div className="field" style={{ marginTop: 14 }}><label>Reason (optional, logged)</label><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. rules violation" /></div>
     </Modal>

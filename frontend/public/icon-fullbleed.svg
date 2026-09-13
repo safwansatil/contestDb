@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="ContestDB">
-  <rect width="32" height="32" rx="7" fill="#F3B201"/>
+  <rect width="32" height="32" fill="#F3B201"/>
   <rect x="5" y="5" width="9" height="9" rx="2.2" fill="#121212"/>
   <rect x="18" y="5" width="9" height="9" rx="2.2" fill="#121212"/>
   <rect x="5" y="18" width="9" height="9" rx="2.2" fill="#121212"/>
