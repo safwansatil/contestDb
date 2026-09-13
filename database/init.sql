@@ -35,7 +35,10 @@ CREATE TABLE IF NOT EXISTS contests (
     allow_late_enrollment BOOLEAN DEFAULT TRUE NOT NULL,
     contest_type VARCHAR(50) DEFAULT 'custom' NOT NULL, -- 'leetcode', 'chess', 'custom'
     judge_webhook_url VARCHAR(255),                 -- Webhook endpoint for the contest judge
+    max_moderators INT DEFAULT 0 NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT chk_max_moderators
+    CHECK (max_moderators >= 0)
     CONSTRAINT chk_contest_times CHECK (freeze_time >= start_time AND end_time >= freeze_time),
     CONSTRAINT chk_contest_status CHECK (status IN ('PENDING_APPROVAL', 'ACTIVE', 'COMPLETED')),
     CONSTRAINT chk_max_participants CHECK (max_participants IS NULL OR max_participants > 0)
@@ -54,7 +57,16 @@ ALTER TABLE contests DROP CONSTRAINT IF EXISTS chk_contest_status;
 ALTER TABLE contests ADD CONSTRAINT chk_contest_status CHECK (status IN ('PENDING_APPROVAL', 'ACTIVE', 'COMPLETED'));
 ALTER TABLE contests DROP CONSTRAINT IF EXISTS chk_max_participants;
 ALTER TABLE contests ADD CONSTRAINT chk_max_participants CHECK (max_participants IS NULL OR max_participants > 0);
+ALTER TABLE contests
+    ADD COLUMN IF NOT EXISTS
+    max_moderators INT DEFAULT 0 NOT NULL;
 
+ALTER TABLE contests
+    DROP CONSTRAINT IF EXISTS chk_max_moderators;
+
+ALTER TABLE contests
+    ADD CONSTRAINT chk_max_moderators
+    CHECK (max_moderators >= 0);
 -- 3. Enrollments Table (Maps users to contests they participate in and their roles)
 CREATE TABLE IF NOT EXISTS enrollments (
     contest_id INT REFERENCES contests(id) ON DELETE CASCADE,

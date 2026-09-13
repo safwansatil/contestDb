@@ -62,7 +62,9 @@ export function ContestDetail() {
       if (
         tstat === 'ONGOING' &&
         c!.status === 'ACTIVE' &&
-        !['chess', 'icpc'].includes(c!.contest_type)
+       !['chess', 'icpc'].includes(
+  c!.contest_type ?? '',
+)
       ) {
         return {
           label: '↑ Submit solution',
@@ -763,6 +765,17 @@ function Manage({ c, onChange }: { c: Contest; onChange: () => void }) {
   const [kicking, setKicking] = useState<Member | null>(null)
   const load = useCallback(() => { contestApi.members(c.id).then(setMembers).catch((e) => { toast(apiError(e), 'err'); setMembers([]) }) }, [c.id, toast])
   useEffect(() => { load() }, [load])
+    const moderatorCount =
+    members?.filter(
+      (member) =>
+        member.role === 'MODERATOR',
+    ).length ?? 0
+
+  const moderatorCapacity =
+    c.max_moderators ?? 0
+
+  const moderatorCapacityReached =
+    moderatorCount >= moderatorCapacity
 
   async function toggleVis(k: keyof typeof vis) {
     const next = { ...vis, [k]: !vis[k] }
@@ -783,15 +796,62 @@ function Manage({ c, onChange }: { c: Contest; onChange: () => void }) {
     <div className="grid">
       <div className="notice">⚙ Host console — every control maps to a role-guarded API endpoint.</div>
       <div className="glass" style={{ overflow: 'hidden' }}>
-        <div className="pad" style={{ borderBottom: '1px solid var(--glass-border)' }}><div className="label">Members & roles</div></div>
-        {members === null ? <Loader /> : members.map((m) => (
+       <div
+  className="pad row"
+  style={{
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 10,
+    borderBottom:
+      '1px solid var(--glass-border)',
+  }}
+>
+  <div>
+    <div className="label">
+      Members & roles
+    </div>
+
+    <div
+      className="dim"
+      style={{
+        marginTop: 4,
+        fontSize: 12,
+      }}
+    >
+      The host does not consume a moderator slot.
+    </div>
+  </div>
+
+  <div
+    className={
+      moderatorCapacityReached
+        ? 'moderator-capacity full'
+        : 'moderator-capacity'
+    }
+  >
+    <span>Moderators</span>
+
+    <strong>
+      {moderatorCount}
+      {' / '}
+      {moderatorCapacity}
+    </strong>
+  </div>
+</div>{members === null ? <Loader /> : members.map((m) => (
           <div className="member" key={m.user_id}>
             <Avatar name={m.username} size={32} />
             <div className="grow"><b>{m.username}</b><div className="faint" style={{ fontSize: 12 }}>user #{m.user_id}</div></div>
             <Pill className={m.role === 'HOST' ? 'tag-gold' : m.role === 'MODERATOR' ? 'tag-pending' : 'tag-neutral'}>{m.role}</Pill>
             {m.role !== 'HOST' && (
               <div className="row" style={{ gap: 6 }}>
-                <RoleSelect c={c} m={m} onDone={load} />
+               <RoleSelect
+  c={c}
+  m={m}
+  moderatorCapacityReached={
+    moderatorCapacityReached
+  }
+  onDone={load}
+/>
                 <button className="btn danger sm" onClick={() => setKicking(m)}>Kick</button>
               </div>
             )}
@@ -816,26 +876,37 @@ function Manage({ c, onChange }: { c: Contest; onChange: () => void }) {
     </div>
   )
 }
-
 function RoleSelect({
   c,
   m,
-  onDone
+  moderatorCapacityReached,
+  onDone,
 }: {
   c: Contest
   m: Member
+  moderatorCapacityReached: boolean
   onDone: () => void
 }) {
   const toast = useToast()
-
   const [pendingRole, setPendingRole] = useState<string | null>(null)
+  const alreadyModerator = m.role === 'MODERATOR'
+
+  function requestChange(role: string) {
+    if (role === m.role) return
+
+    if (role === 'MODERATOR' && moderatorCapacityReached && !alreadyModerator) {
+      toast('Moderator capacity reached', 'err')
+      return
+    }
+
+    setPendingRole(role)
+  }
 
   async function confirmChange() {
     if (!pendingRole) return
 
     try {
       await contestApi.setRole(c.id, m.user_id, pendingRole)
-
       toast(`Role updated to ${pendingRole}`)
       setPendingRole(null)
       onDone()
@@ -844,29 +915,24 @@ function RoleSelect({
     }
   }
 
-  function requestChange(role: string) {
-    if (role === m.role) return
-
-    setPendingRole(role)
-  }
-
   return (
     <>
       <select
-        style={{
-          width: 'auto',
-          padding: '6px 8px',
-          fontSize: 12
-        }}
+        aria-label={`Change ${m.username}'s role`}
+        style={{ width: 'auto', padding: '6px 8px', fontSize: 12 }}
         value={m.role || 'PARTICIPANT'}
         onChange={(e) => requestChange(e.target.value)}
       >
-        <option value="PARTICIPANT">
-          Participant
-        </option>
+        <option value="PARTICIPANT">Participant</option>
 
-        <option value="MODERATOR">
+        <option
+          value="MODERATOR"
+          disabled={moderatorCapacityReached && !alreadyModerator}
+        >
           Moderator
+          {moderatorCapacityReached && !alreadyModerator
+            ? ' — capacity reached'
+            : ''}
         </option>
       </select>
 
@@ -876,31 +942,17 @@ function RoleSelect({
           onClose={() => setPendingRole(null)}
           footer={
             <>
-              <button
-                className="btn ghost"
-                onClick={() => setPendingRole(null)}
-              >
+              <button className="btn ghost" onClick={() => setPendingRole(null)}>
                 No
               </button>
-
-              <button
-                className="btn primary"
-                onClick={confirmChange}
-              >
+              <button className="btn primary" onClick={confirmChange}>
                 Yes
               </button>
             </>
           }
         >
-          <div
-            className="notice"
-            style={{
-              background: 'rgba(180, 35, 35, 0.22)',
-              color: '#ff8a8a',
-              border: '1px solid rgba(255, 90, 90, 0.55)'
-            }}
-          >
-            ⚠ Are you sure you want to change {m.username}'s role to {pendingRole}?
+          <div className="notice">
+            Change {m.username}'s role to {pendingRole}?
           </div>
         </Modal>
       )}
