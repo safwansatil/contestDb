@@ -659,3 +659,105 @@ body{background:var(--paper);font-family:var(--font-body);font-size:15px}.aurora
   background: #536627 !important;
   border-color: #536627 !important;
 }
+
+
+/* ==========================================================
+   Remove unintended dark backgrounds from application pages
+   ========================================================== */
+
+/*
+ * Use the complete background shorthand. This removes any old
+ * background-image or gradient in addition to changing the color.
+ */
+html,
+body,
+#root {
+  min-height: 100%;
+  background: var(--paper) !important;
+  background-image: none !important;
+}
+
+body {
+  min-height: 100vh;
+}
+
+/*
+ * Disable the legacy decorative background. It is responsible
+ * for dark colors showing through transparent page sections.
+ */
+.aurora,
+.aurora .blob,
+.aurora .grain {
+  display: none !important;
+  background: none !important;
+  background-image: none !important;
+}
+
+/*
+ * Shared wrappers used by the different application roles.
+ */
+.page,
+.editorial-page,
+.contest-paper,
+.auth-spread {
+  min-height: calc(100vh - 70px);
+  background: var(--paper) !important;
+  background-image: none !important;
+}
+
+/*
+ * Ensure the primary page layouts do not reveal a background
+ * from an older theme underneath their content.
+ */
+.two-col,
+.contest-grid,
+.contest-editorial-grid,
+.profile-cover,
+.request-grid {
+  background-image: none !important;
+}
+
+/*
+ * Cards remain transparent/editorial, but their surrounding
+ * page always uses the correct theme paper color.
+ */
+.contest-editorial-card,
+.contest-paper .glass {
+  background-color: transparent;
+}
+
+/*
+ * Keep the intentionally dark landing-page sections.
+ * These are separate from the accidental page background.
+ */
+.landing .editorial-strip,
+.landing .landing-cta {
+  background: #1d252d !important;
+}
+
+.landing .editorial-strip h3,
+.landing .editorial-strip p,
+.landing .editorial-strip .label,
+.landing .landing-cta h2,
+.landing .landing-cta h2 em {
+  color: #ffffff !important;
+}
+
+.landing .editorial-strip p,
+.landing .editorial-strip .label {
+  color: #cbd3d8 !important;
+}
+
+.landing .landing-cta aside {
+  background: #eef0dc !important;
+  color: #171411 !important;
+}
+
+@media (max-width: 850px) {
+  .page,
+  .editorial-page,
+  .contest-paper,
+  .auth-spread {
+    min-height: calc(100vh - 62px);
+  }
+}
