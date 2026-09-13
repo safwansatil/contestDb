@@ -395,7 +395,26 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .modal header{display:flex;align-items:center;justify-content:space-between;padding:19px 23px;border-bottom:1px solid var(--glass-border)}
 .modal .body{padding:22px}
 .modal footer{padding:16px 23px;border-top:1px solid var(--glass-border);display:flex;gap:10px;justify-content:flex-end;
-  position:sticky;bottom:0;background:var(--surface)}
+  position:sticky;bottom:0;background:transparent}
+.modal footer .btn{
+  border:1px solid rgba(255,255,255,.55);
+}
+.modal header{
+  color:#fff;
+}
+
+.modal header h1,
+.modal header h2,
+.modal header h3,
+.modal header h4{
+  color:#fff;
+}
+
+.modal .notice{
+  background:rgba(255,255,255,.08);
+  color:#fff;
+  border:1px solid rgba(255,255,255,.2);
+}
 .iconbtn{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:var(--ink-dim);transition:.15s}
 .iconbtn:hover{background:var(--fill-2);color:var(--ink)}
 
