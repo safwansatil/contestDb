@@ -1015,6 +1015,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- I. Update Member Role (Only Hosts)
+-- I. Update Member Role (HOST or MODERATOR)
 CREATE OR REPLACE FUNCTION update_contest_member_role(
     p_contest_id INT,
     p_requesting_user_id INT,
@@ -1023,26 +1024,62 @@ CREATE OR REPLACE FUNCTION update_contest_member_role(
 ) RETURNS VOID AS $$
 DECLARE
     v_req_role VARCHAR;
+    v_target_role VARCHAR;
 BEGIN
+    -- Get requester's role
     SELECT role INTO v_req_role
     FROM enrollments
-    WHERE contest_id = p_contest_id AND user_id = p_requesting_user_id;
+    WHERE contest_id = p_contest_id
+      AND user_id = p_requesting_user_id;
 
-    IF v_req_role IS NULL OR v_req_role <> 'HOST' THEN
-        RAISE EXCEPTION 'Unauthorized: Only the Host can manage roles';
+    IF v_req_role IS NULL
+       OR v_req_role NOT IN ('HOST', 'MODERATOR') THEN
+        RAISE EXCEPTION
+            'Unauthorized: Only Host or Moderator can manage roles';
     END IF;
 
-    IF p_new_role NOT IN ('HOST', 'MODERATOR', 'PARTICIPANT') THEN
-        RAISE EXCEPTION 'Invalid role specified';
+    -- Get target's current role
+    SELECT role INTO v_target_role
+    FROM enrollments
+    WHERE contest_id = p_contest_id
+      AND user_id = p_target_user_id;
+
+    IF v_target_role IS NULL THEN
+        RAISE EXCEPTION
+            'Target user is not enrolled in this contest';
     END IF;
 
-    INSERT INTO enrollments (contest_id, user_id, role)
-    VALUES (p_contest_id, p_target_user_id, p_new_role)
-    ON CONFLICT (contest_id, user_id)
-    DO UPDATE SET role = EXCLUDED.role;
+    -- Nobody can create another HOST
+    IF p_new_role = 'HOST' THEN
+        RAISE EXCEPTION
+            'Cannot assign the Host role';
+    END IF;
+
+    IF p_new_role NOT IN ('MODERATOR', 'PARTICIPANT') THEN
+        RAISE EXCEPTION
+            'Invalid role specified';
+    END IF;
+
+    -- Original HOST cannot have their role changed
+    IF v_target_role = 'HOST' THEN
+        RAISE EXCEPTION
+            'Cannot change the Host role';
+    END IF;
+
+    -- Moderator cannot promote a participant to moderator
+    IF v_req_role = 'MODERATOR'
+       AND v_target_role = 'PARTICIPANT'
+       AND p_new_role = 'MODERATOR' THEN
+        RAISE EXCEPTION
+            'Moderators cannot promote participants to Moderator';
+    END IF;
+
+    UPDATE enrollments
+    SET role = p_new_role
+    WHERE contest_id = p_contest_id
+      AND user_id = p_target_user_id;
 END;
 $$ LANGUAGE plpgsql;
-
 -- ============================================================
 -- 8. Submission Validation Functions (DB-Native Schema & Cooldown)
 -- ============================================================
@@ -1287,41 +1324,64 @@ DECLARE
     v_req_role      VARCHAR;
     v_target_role   VARCHAR;
 BEGIN
-    -- Only HOST can kick participants
+    -- HOST and MODERATOR may remove members
     SELECT role INTO v_req_role
     FROM enrollments
-    WHERE contest_id = p_contest_id AND user_id = p_requesting_user_id;
+    WHERE contest_id = p_contest_id
+      AND user_id = p_requesting_user_id;
 
-    IF v_req_role IS NULL OR v_req_role <> 'HOST' THEN
-        RAISE EXCEPTION 'Unauthorized: Only the Host can remove participants';
+    IF v_req_role IS NULL
+       OR v_req_role NOT IN ('HOST', 'MODERATOR') THEN
+        RAISE EXCEPTION
+            'Unauthorized: Only Host or Moderator can remove participants';
     END IF;
 
-    -- Verify the target is enrolled
+    -- Verify target
     SELECT role INTO v_target_role
     FROM enrollments
-    WHERE contest_id = p_contest_id AND user_id = p_target_user_id;
+    WHERE contest_id = p_contest_id
+      AND user_id = p_target_user_id;
 
     IF v_target_role IS NULL THEN
-        RAISE EXCEPTION 'Target user is not enrolled in this contest';
+        RAISE EXCEPTION
+            'Target user is not enrolled in this contest';
     END IF;
 
-    -- A HOST cannot kick themselves
+    -- Nobody can kick themselves
     IF p_target_user_id = p_requesting_user_id THEN
-        RAISE EXCEPTION 'A Host cannot remove themselves from the contest';
+        RAISE EXCEPTION
+            'You cannot remove yourself from the contest';
     END IF;
 
-    -- Another HOST cannot be kicked (only MODERATOR or PARTICIPANT)
+    -- HOST can never be kicked
     IF v_target_role = 'HOST' THEN
-        RAISE EXCEPTION 'Cannot remove another Host from the contest';
+        RAISE EXCEPTION
+            'Cannot remove the Host from the contest';
     END IF;
 
-    -- Record the kick in the audit log (acts as permanent ban for this contest)
-    INSERT INTO kick_log (contest_id, kicked_user_id, kicked_by, reason)
-    VALUES (p_contest_id, p_target_user_id, p_requesting_user_id, p_reason);
+    -- MODERATOR cannot kick another MODERATOR
+    IF v_req_role = 'MODERATOR'
+       AND v_target_role = 'MODERATOR' THEN
+        RAISE EXCEPTION
+            'Moderators cannot remove another Moderator';
+    END IF;
 
-    -- Remove the enrollment
+    INSERT INTO kick_log (
+        contest_id,
+        kicked_user_id,
+        kicked_by,
+        reason
+    )
+    VALUES (
+        p_contest_id,
+        p_target_user_id,
+        p_requesting_user_id,
+        p_reason
+    );
+
     DELETE FROM enrollments
-    WHERE contest_id = p_contest_id AND user_id = p_target_user_id;
+    WHERE contest_id = p_contest_id
+      AND user_id = p_target_user_id;
 END;
 $$ LANGUAGE plpgsql;
 

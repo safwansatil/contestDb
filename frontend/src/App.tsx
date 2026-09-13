@@ -34,7 +34,7 @@ export function App() {
           <Route path="/login" element={<Auth mode="login" />} />
           <Route path="/signup" element={<Auth mode="signup" />} />
           <Route path="/app" element={<Protected rejectDev><Dashboard /></Protected>} />
-          <Route path="/contests/:id" element={<Protected rejectDev><ContestDetail /></Protected>} />
+          <Route path="/contests/:id" element={<Protected><ContestDetail /></Protected>} />
           <Route path="/users/:id" element={<Protected><Profile /></Protected>} />
           <Route path="/dev" element={<Protected requireDev><DeveloperDashboard /></Protected>} />
           <Route path="*" element={<Navigate to="/" replace />} />
