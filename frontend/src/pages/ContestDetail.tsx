@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   contestApi, apiError, type Contest, type Task, type LeaderRow, type Announcement, type Member,
@@ -29,6 +29,10 @@ export function ContestDetail() {
   const { id } = useParams()
   const cid = Number(id)
   const { user } = useAuth()
+  const [searchParams] = useSearchParams()
+  const developerMode =
+    searchParams.get('dev') === '1' &&
+    user?.is_developer === true
   const toast = useToast()
   const nav = useNavigate()
   const [c, setC] = useState<Contest | null>(null)
@@ -52,7 +56,7 @@ export function ContestDetail() {
   if (!c) return <Loader label="Loading contest…" />
 
   const role = c.user_role
-  const admin = isAdmin(role)
+  const admin = isAdmin(role) || developerMode
   const tstat = timelineStatus(c)
   const frozen = isFrozen(c)
 
@@ -762,6 +766,9 @@ function Announcements({ c, admin }: { c: Contest; admin: boolean }) {
 
 /* ---------------- Manage (host/mod) ---------------- */
 function Manage({ c, onChange }: { c: Contest; onChange: () => void }) {
+  const viewerRole = c.user_role
+  const viewerIsHost = viewerRole === 'HOST'
+  const viewerIsModerator = viewerRole === 'MODERATOR'
   const toast = useToast()
   const nav = useNavigate()
   const [members, setMembers] = useState<Member[] | null>(null)
@@ -848,15 +855,32 @@ function Manage({ c, onChange }: { c: Contest; onChange: () => void }) {
             <Pill className={m.role === 'HOST' ? 'tag-gold' : m.role === 'MODERATOR' ? 'tag-pending' : 'tag-neutral'}>{m.role}</Pill>
             {m.role !== 'HOST' && (
               <div className="row" style={{ gap: 6 }}>
-               <RoleSelect
-  c={c}
-  m={m}
-  moderatorCapacityReached={
-    moderatorCapacityReached
-  }
-  onDone={load}
-/>
-                <button className="btn danger sm" onClick={() => setKicking(m)}>Kick</button>
+                {viewerIsHost && (
+                  <RoleSelect
+                    c={c}
+                    m={m}
+                    moderatorCapacityReached={moderatorCapacityReached}
+                    onDone={load}
+                  />
+                )}
+
+                {viewerIsModerator && m.role === 'PARTICIPANT' && (
+                  <button
+                    className="btn danger sm"
+                    onClick={() => setKicking(m)}
+                  >
+                    Kick
+                  </button>
+                )}
+
+                {viewerIsHost && (
+                  <button
+                    className="btn danger sm"
+                    onClick={() => setKicking(m)}
+                  >
+                    Kick
+                  </button>
+                )}
               </div>
             )}
           </div>
