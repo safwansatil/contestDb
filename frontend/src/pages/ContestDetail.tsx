@@ -62,7 +62,9 @@ export function ContestDetail() {
       if (
         tstat === 'ONGOING' &&
         c!.status === 'ACTIVE' &&
-        !['chess', 'icpc'].includes(c!.contest_type)
+       !['chess', 'icpc'].includes(
+  c!.contest_type ?? '',
+)
       ) {
         return {
           label: '↑ Submit solution',
@@ -763,6 +765,17 @@ function Manage({ c, onChange }: { c: Contest; onChange: () => void }) {
   const [kicking, setKicking] = useState<Member | null>(null)
   const load = useCallback(() => { contestApi.members(c.id).then(setMembers).catch((e) => { toast(apiError(e), 'err'); setMembers([]) }) }, [c.id, toast])
   useEffect(() => { load() }, [load])
+    const moderatorCount =
+    members?.filter(
+      (member) =>
+        member.role === 'MODERATOR',
+    ).length ?? 0
+
+  const moderatorCapacity =
+    c.max_moderators ?? 0
+
+  const moderatorCapacityReached =
+    moderatorCount >= moderatorCapacity
 
   async function toggleVis(k: keyof typeof vis) {
     const next = { ...vis, [k]: !vis[k] }
@@ -783,15 +796,62 @@ function Manage({ c, onChange }: { c: Contest; onChange: () => void }) {
     <div className="grid">
       <div className="notice">⚙ Host console — every control maps to a role-guarded API endpoint.</div>
       <div className="glass" style={{ overflow: 'hidden' }}>
-        <div className="pad" style={{ borderBottom: '1px solid var(--glass-border)' }}><div className="label">Members & roles</div></div>
-        {members === null ? <Loader /> : members.map((m) => (
+       <div
+  className="pad row"
+  style={{
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 10,
+    borderBottom:
+      '1px solid var(--glass-border)',
+  }}
+>
+  <div>
+    <div className="label">
+      Members & roles
+    </div>
+
+    <div
+      className="dim"
+      style={{
+        marginTop: 4,
+        fontSize: 12,
+      }}
+    >
+      The host does not consume a moderator slot.
+    </div>
+  </div>
+
+  <div
+    className={
+      moderatorCapacityReached
+        ? 'moderator-capacity full'
+        : 'moderator-capacity'
+    }
+  >
+    <span>Moderators</span>
+
+    <strong>
+      {moderatorCount}
+      {' / '}
+      {moderatorCapacity}
+    </strong>
+  </div>
+</div>{members === null ? <Loader /> : members.map((m) => (
           <div className="member" key={m.user_id}>
             <Avatar name={m.username} size={32} />
             <div className="grow"><b>{m.username}</b><div className="faint" style={{ fontSize: 12 }}>user #{m.user_id}</div></div>
             <Pill className={m.role === 'HOST' ? 'tag-gold' : m.role === 'MODERATOR' ? 'tag-pending' : 'tag-neutral'}>{m.role}</Pill>
             {m.role !== 'HOST' && (
               <div className="row" style={{ gap: 6 }}>
-                <RoleSelect c={c} m={m} onDone={load} />
+               <RoleSelect
+  c={c}
+  m={m}
+  moderatorCapacityReached={
+    moderatorCapacityReached
+  }
+  onDone={load}
+/>
                 <button className="btn danger sm" onClick={() => setKicking(m)}>Kick</button>
               </div>
             )}
@@ -817,16 +877,67 @@ function Manage({ c, onChange }: { c: Contest; onChange: () => void }) {
   )
 }
 
-function RoleSelect({ c, m, onDone }: { c: Contest; m: Member; onDone: () => void }) {
+function RoleSelect({
+  c,
+  m,
+  moderatorCapacityReached,
+  onDone,
+}: {
+  c: Contest
+  m: Member
+  moderatorCapacityReached: boolean
+  onDone: () => void
+}) {
   const toast = useToast()
+
+  const alreadyModerator =
+    m.role === 'MODERATOR'
+
   async function change(role: string) {
-    try { await contestApi.setRole(c.id, m.user_id, role); toast(`Role updated to ${role}`); onDone() } catch (e) { toast(apiError(e), 'err') }
+    try {
+      await contestApi.setRole(
+        c.id,
+        m.user_id,
+        role,
+      )
+
+      toast(`Role updated to ${role}`)
+      onDone()
+    } catch (error) {
+      toast(apiError(error), 'err')
+    }
   }
+
   return (
-    <select style={{ width: 'auto', padding: '6px 8px', fontSize: 12 }} value={m.role || 'PARTICIPANT'} onChange={(e) => change(e.target.value)}>
-      <option value="PARTICIPANT">Participant</option>
-      <option value="MODERATOR">Moderator</option>
-      <option value="HOST">Host</option>
+    <select
+      aria-label={`Change ${m.username}'s role`}
+      style={{
+        width: 'auto',
+        padding: '6px 8px',
+        fontSize: 12,
+      }}
+      value={m.role || 'PARTICIPANT'}
+      onChange={(event) =>
+        change(event.target.value)
+      }
+    >
+      <option value="PARTICIPANT">
+        Participant
+      </option>
+
+      <option
+        value="MODERATOR"
+        disabled={
+          moderatorCapacityReached
+          && !alreadyModerator
+        }
+      >
+        Moderator
+        {moderatorCapacityReached
+          && !alreadyModerator
+          ? ' — capacity reached'
+          : ''}
+      </option>
     </select>
   )
 }

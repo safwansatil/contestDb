@@ -121,18 +121,37 @@ class SubmissionRequest(BaseModel):
     submission_data: Dict[str, Any] = Field(..., description="Arbitrary JSONB data representing the submission details")
 
 class ContestCreateRequest(BaseModel):
-    title: str = Field(..., min_length=3, max_length=100)
-    ranking_strategy: str = Field(..., max_length=30, description="Strategy, e.g., SUM, MAX, ICPC, or Custom")
+    title: str = Field(
+        ...,
+        min_length=3,
+        max_length=100
+    )
+    ranking_strategy: str = Field(
+        "SUM",
+        max_length=30
+    )
     start_time: datetime
     freeze_time: datetime
     end_time: datetime
-    invitation_code: Optional[str] = Field(None, max_length=50)
-    judging_description: str = Field(..., min_length=5)
-    max_participants: Optional[int] = Field(None, ge=1, description="Max participant cap. NULL = unlimited.")
-    allow_late_enrollment: bool = Field(True, description="If False, enrollment is blocked after start_time.")
-    contest_type: str = Field("custom", description="leetcode, chess, or custom")
-    judge_webhook_url: Optional[str] = Field(None, description="Webhook endpoint for the contest judge")
-
+    invitation_code: Optional[str] = Field(
+        None,
+        max_length=50
+    )
+    judging_description: str = Field(
+        ...,
+        min_length=5
+    )
+    max_participants: Optional[int] = Field(
+        None,
+        ge=1
+    )
+    max_moderators: int = Field(
+        0,
+        ge=0,
+        le=100,
+        description="Maximum number of moderators, excluding the host."
+    )
+    allow_late_enrollment: bool = True
 class TaskCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1)
@@ -155,10 +174,18 @@ class RoleUpdateRequest(BaseModel):
 
     @field_validator("new_role")
     @classmethod
-    def validate_role(cls, v: str) -> str:
-        if v not in ("HOST", "MODERATOR", "PARTICIPANT"):
-            raise ValueError("Role must be HOST, MODERATOR, or PARTICIPANT")
-        return v
+    def validate_role(cls, value: str) -> str:
+        value = value.upper().strip()
+
+        if value not in (
+            "MODERATOR",
+            "PARTICIPANT"
+        ):
+            raise ValueError(
+                "Role must be MODERATOR or PARTICIPANT"
+            )
+
+        return value
 
 class ContestVisibilityRequest(BaseModel):
     show_participant_count: bool = True
@@ -371,7 +398,8 @@ async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = 
                 """
                 SELECT c.id, c.title, c.ranking_strategy, c.start_time, c.freeze_time, c.end_time,
                        c.status, c.judging_description, c.invitation_code, e.role,
-                       c.max_participants, c.allow_late_enrollment,
+                       c.max_participants, c.max_moderators,
+c.allow_late_enrollment,
                        cv.show_participant_count, cv.show_leaderboard, cv.show_member_list,
                        cv.show_task_list, cv.show_statistics, cv.show_submission_count,
                        c.contest_type, c.judge_webhook_url
@@ -386,8 +414,27 @@ async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = 
             if not row:
                 raise HTTPException(status_code=404, detail="Contest not found")
 
-            (c_id, title, ranking, start, freeze, end, status, judging_desc, inv_code, role,
-             max_p, allow_late, show_pc, show_lb, show_ml, show_tl, show_st, show_sc, contest_type, webhook_url) = row
+            (
+    c_id,
+    title,
+    ranking,
+    start,
+    freeze,
+    end,
+    status,
+    judging_desc,
+    inv_code,
+    role,
+    max_p,
+    max_mods,
+    allow_late,
+    show_pc,
+    show_lb,
+    show_ml,
+    show_tl,
+    show_st,
+    show_sc
+) = row
             has_code = inv_code is not None and inv_code != ""
             is_admin = role in ("HOST", "MODERATOR")
 
@@ -404,6 +451,7 @@ async def get_contest(contest_id: int, current_user: Optional[Dict[str, Any]] = 
                 "invitation_code": inv_code if is_admin else None,
                 "user_role": role,
                 "max_participants": max_p,
+                "max_moderators": max_mods,
                 "allow_late_enrollment": allow_late,
                 "contest_type": contest_type,
                 "judge_webhook_url": webhook_url,
@@ -427,7 +475,7 @@ async def create_contest(payload: ContestCreateRequest, current_user: Dict[str, 
         async with conn.cursor() as cur:
             try:
                 await cur.execute(
-                    "SELECT create_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                    "SELECT create_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                     (
                         payload.title,
                         payload.ranking_strategy,

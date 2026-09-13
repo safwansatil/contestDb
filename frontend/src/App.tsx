@@ -10,6 +10,7 @@ import { Profile } from './pages/Profile'
 import { DeveloperDashboard } from './pages/DeveloperDashboard'
 import { Loader } from './components/ui'
 import type { ReactNode } from 'react'
+import { CreateContest } from './pages/CreateContest'
 
 function Protected({ children, requireDev, rejectDev }: { children: ReactNode, requireDev?: boolean, rejectDev?: boolean }) {
   const { user, loading } = useAuth()
@@ -34,6 +35,14 @@ export function App() {
           <Route path="/login" element={<Auth mode="login" />} />
           <Route path="/signup" element={<Auth mode="signup" />} />
           <Route path="/app" element={<Protected rejectDev><Dashboard /></Protected>} />
+          <Route
+  path="/contests/new"
+  element={
+    <Protected>
+      <CreateContest />
+    </Protected>
+  }
+/>
           <Route path="/contests/:id" element={<Protected rejectDev><ContestDetail /></Protected>} />
           <Route path="/users/:id" element={<Protected><Profile /></Protected>} />
           <Route path="/dev" element={<Protected requireDev><DeveloperDashboard /></Protected>} />

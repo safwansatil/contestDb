@@ -31,12 +31,26 @@ export interface Visibility {
   show_task_list: boolean; show_statistics: boolean; show_submission_count: boolean
 }
 export interface Contest {
-  id: number; title: string; ranking_strategy: string
-  start_time: string; freeze_time: string; end_time: string
-  status: ContestStatus; judging_description: string
-  requires_invitation_code?: boolean; invitation_code?: string | null
-  user_role: Role; max_participants: number | null; allow_late_enrollment: boolean
-  contest_type: string; judge_webhook_url: string | null
+  id: number
+  title: string
+  contest_type?: string
+  ranking_strategy: string
+
+  start_time: string
+  freeze_time: string
+  end_time: string
+
+  status: ContestStatus
+  judging_description: string
+
+  requires_invitation_code?: boolean
+  invitation_code?: string | null
+
+  user_role: Role
+  max_participants: number | null
+  max_moderators?: number
+  allow_late_enrollment: boolean
+
   visibility: Visibility
 }
 export interface Task {
