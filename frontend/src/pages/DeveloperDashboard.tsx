@@ -1,138 +1,34 @@
 import { useEffect, useState } from 'react'
-import { devApi, contestApi, apiError, type Contest, type Task } from '../lib/api'
+import { devApi, apiError, type Contest, type ContestTypeRequest } from '../lib/api'
 import { useToast } from '../lib/toast'
-import { Page, Loader, Empty, Pill, Modal, Spinner } from '../components/ui'
-import { IconGear, IconCheck } from '../components/icons'
-import { fmtDate } from '../lib/format'
+import { Loader, Modal, Spinner } from '../components/ui'
 
 export function DeveloperDashboard() {
-  const [contests, setContests] = useState<Contest[] | null>(null)
-  const [selectedContest, setSelectedContest] = useState<Contest | null>(null)
+  const [contests, setContests] = useState<Contest[]>([])
+  const [requests, setRequests] = useState<ContestTypeRequest[]>([])
+  const [selected, setSelected] = useState<ContestTypeRequest | null>(null)
   const toast = useToast()
-
-  async function load() {
-    try {
-      setContests(await devApi.contests())
-    } catch (e) { toast(apiError(e), 'err'); setContests([]) }
+  const load = () => {
+    devApi.contests().then(setContests).catch(() => setContests([]))
+    devApi.formatRequests().then(setRequests).catch((e) => toast(apiError(e), 'err'))
   }
+  useEffect(load, [])
+  const pending = requests.filter((r) => r.status === 'PENDING')
 
-  useEffect(() => { load() }, [])
-
-  return (
-    <Page>
-      <div className="page">
-        <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
-          <div>
-            <h1 style={{ fontSize: 27 }}>Developer Portal</h1>
-            <p className="dim" style={{ margin: '7px 0 0' }}>Configure technical integrations and approve contests.</p>
-          </div>
-        </div>
-
-        {contests === null ? <Loader /> : contests.length === 0 ? <Empty icon="◲">No contests in the system.</Empty> : (
-          <div className="grid">
-            {contests.map((c) => (
-              <div key={c.id} className="card p-lg row" style={{ gap: 16, cursor: 'pointer', border: c.status === 'PENDING_APPROVAL' ? '1px solid var(--border)' : '' }} onClick={() => setSelectedContest(c)}>
-                <div className="grow stack" style={{ gap: 6 }}>
-                  <div className="row" style={{ gap: 10 }}>
-                    <h3 style={{ margin: 0, fontSize: 17 }}>{c.title}</h3>
-                    {c.status === 'PENDING_APPROVAL' ? <Pill className="tag-red">Pending Approval</Pill> : <Pill className="tag-green">Active</Pill>}
-                  </div>
-                  <div className="faint" style={{ fontSize: 13 }}>
-                    Strategy: {c.ranking_strategy} · Starts {fmtDate(c.start_time)}
-                  </div>
-                </div>
-                <button className="btn ghost"><IconGear size={20} /></button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      
-      {selectedContest && <DevContestModal contest={selectedContest} onClose={() => setSelectedContest(null)} onUpdate={() => { setSelectedContest(null); load() }} />}
-    </Page>
-  )
+  return <div className="container mx-auto px-4 py-8 lg:px-8 lg:py-12 max-w-6xl">
+    <div className="mb-10"><p className="text-primary font-semibold text-sm uppercase tracking-widest">Safwan · Developer Console</p><h1 className="text-4xl font-extrabold mt-2">Integration review queue</h1><p className="opacity-60 mt-2">Approve real contests only after their interface and judge are ready. Format requests stay separate from contests.</p></div>
+    <section className="mb-12"><div className="flex items-center justify-between mb-4"><h2 className="text-2xl font-bold">Format requests</h2><span className="badge badge-warning">{pending.length} pending</span></div>
+      {requests.length === 0 ? <Loader /> : <div className="grid md:grid-cols-2 gap-5">{requests.map((r) => <button key={r.id} className="text-left card bg-base-100 border border-base-200 shadow-sm hover:border-primary/50 transition-colors" onClick={() => setSelected(r)}><div className="card-body p-6"><div className="flex justify-between gap-3"><h3 className="card-title">{r.title}</h3><span className={`badge ${r.status === 'PENDING' ? 'badge-warning' : r.status === 'REJECTED' ? 'badge-error' : 'badge-success'}`}>{r.status}</span></div><p className="text-xs uppercase tracking-wider opacity-50">{r.requested_type.replace('_', ' ')} · requested by {r.requester}</p><p className="text-sm opacity-70 line-clamp-3">{r.rules_description}</p>{r.developer_note && <p className="text-sm bg-base-200 rounded-lg p-3">Your note: {r.developer_note}</p>}</div></button>)}</div>}
+    </section>
+    <section><h2 className="text-2xl font-bold mb-4">Contest approval queue</h2><div className="overflow-x-auto bg-base-100 border border-base-200 rounded-2xl"><table className="table"><thead><tr><th>Contest</th><th>Format</th><th>Status</th><th></th></tr></thead><tbody>{contests.map((c) => <tr key={c.id}><td><b>{c.title}</b><div className="text-xs opacity-50">{c.ranking_strategy}</div></td><td>{c.contest_type}</td><td><span className={`badge ${c.status === 'PENDING_APPROVAL' ? 'badge-warning' : 'badge-success'}`}>{c.status}</span></td><td>{c.status === 'PENDING_APPROVAL' && <button className="btn btn-sm btn-primary" onClick={async () => { try { await devApi.approve(c.id); toast('Contest approved'); load() } catch (e) { toast(apiError(e), 'err') } }}>Approve</button>}</td></tr>)}</tbody></table></div></section>
+    {selected && <RequestDecision request={selected} onClose={() => setSelected(null)} onDone={() => { setSelected(null); load() }} />}
+  </div>
 }
 
-function DevContestModal({ contest, onClose, onUpdate }: { contest: Contest; onClose: () => void; onUpdate: () => void }) {
-  const toast = useToast()
-  const [tasks, setTasks] = useState<Task[] | null>(null)
+function RequestDecision({ request, onClose, onDone }: { request: ContestTypeRequest; onClose: () => void; onDone: () => void }) {
+  const [note, setNote] = useState(request.developer_note || '')
   const [busy, setBusy] = useState(false)
-  
-  async function loadTasks() {
-    try {
-      setTasks(await contestApi.tasks(contest.id))
-    } catch (e) { toast(apiError(e), 'err'); setTasks([]) }
-  }
-  
-  useEffect(() => { loadTasks() }, [contest.id])
-
-  async function approve() {
-    setBusy(true)
-    try {
-      await devApi.approve(contest.id)
-      toast('Contest approved and is now ACTIVE', 'info')
-      onUpdate()
-    } catch (e) { toast(apiError(e), 'err') } finally { setBusy(false) }
-  }
-
-  return (
-    <Modal title={`Dev Config: ${contest.title}`} subtitle={`Format: ${contest.ranking_strategy} · Status: ${contest.status}`} onClose={onClose}
-      footer={<>
-        <button className="btn ghost" onClick={onClose}>Close</button>
-        {contest.status === 'PENDING_APPROVAL' && (
-          <button className="btn primary" onClick={approve} disabled={busy}>{busy ? <Spinner /> : <><IconCheck size={16}/> Approve Contest</>}</button>
-        )}
-      </>}>
-      
-      <div className="stack" style={{ gap: 16 }}>
-        <h4 style={{ margin: 0 }}>Task Configurations</h4>
-        {tasks === null ? <Loader /> : tasks.length === 0 ? <Empty>No tasks created by the host yet.</Empty> : (
-          <div className="grid">
-            {tasks.map((t) => (
-              <TaskConfigRow key={t.id} task={t} />
-            ))}
-          </div>
-        )}
-      </div>
-    </Modal>
-  )
-}
-
-function TaskConfigRow({ task }: { task: Task }) {
   const toast = useToast()
-  const [busy, setBusy] = useState(false)
-  const [webhookUrl, setWebhookUrl] = useState(task.webhook_url || '')
-  const [schemaStr, setSchemaStr] = useState(JSON.stringify(task.submission_schema, null, 2))
-
-  async function save() {
-    setBusy(true)
-    try {
-      let schema = {}
-      try { schema = JSON.parse(schemaStr) } catch { return toast('Invalid JSON in schema', 'err') }
-      await devApi.updateTaskConfig(task.id, webhookUrl.trim() || null, schema)
-      toast('Task config saved', 'info')
-    } catch (e) { toast(apiError(e), 'err') } finally { setBusy(false) }
-  }
-
-  return (
-    <div className="glass stack" style={{ gap: 10, padding: 16 }}>
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <b>{task.title}</b>
-        <span className="mono faint">ID: {task.id}</span>
-      </div>
-      <p className="dim" style={{ fontSize: 13, margin: 0 }}>{task.description}</p>
-      
-      <div className="field"><label>Webhook URL</label>
-        <input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} placeholder="https://api.my-judge.com/evaluate" />
-      </div>
-      
-      <div className="field"><label>Submission Schema (JSON)</label>
-        <textarea value={schemaStr} onChange={(e) => setSchemaStr(e.target.value)} style={{ fontFamily: 'monospace', minHeight: 120 }} />
-      </div>
-      
-      <div style={{ textAlign: 'right' }}>
-        <button className="btn ghost sm" onClick={save} disabled={busy}>{busy ? 'Saving...' : 'Save Config'}</button>
-      </div>
-    </div>
-  )
+  async function decide(decision: 'APPROVED' | 'REJECTED') { setBusy(true); try { await devApi.decideFormatRequest(request.id, decision, note); toast(`Request ${decision.toLowerCase()}`); onDone() } catch (e) { toast(apiError(e), 'err'); setBusy(false) } }
+  return <Modal title={request.title} subtitle={`${request.requested_type.replace('_', ' ')} · requested by ${request.requester}`} onClose={onClose} footer={<><button className="btn ghost" onClick={onClose}>Close</button>{request.status === 'PENDING' && <><button className="btn danger" disabled={busy} onClick={() => decide('REJECTED')}>{busy ? <Spinner /> : 'Reject request'}</button><button className="btn primary" disabled={busy} onClick={() => decide('APPROVED')}>{busy ? <Spinner /> : 'Approve request'}</button></>}</>}><p className="dim">{request.rules_description}</p>{request.requested_tasks && <div className="notice blue" style={{ margin: '16px 0' }}>Suggested tasks: {request.requested_tasks}</div>}<div className="field"><label>Developer decision note</label><textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Explain what is missing or what will be integrated…" /></div></Modal>
 }

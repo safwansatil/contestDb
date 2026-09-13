@@ -41,10 +41,10 @@ export function SubmitModal({ contest, tasks, initialTask, onClose, onJudged }: 
     const payload: Record<string, unknown> = {}
     
     // For MVP, if it's leetcode, we expect source_code. If chess, we expect pgn.
-    if (contest.contest_type === 'leetcode' || contest.ranking_strategy === 'ICPC') {
+    if (contest.contest_type === 'icpc') {
       if (!values.source_code) return toast('Missing source code', 'err')
       payload.source_code = values.source_code
-      payload.language_id = values.language_id || 'python'
+      payload.language = values.language || 'python'
     } else if (contest.contest_type === 'chess') {
       if (!values.pgn) return toast('Make a move to generate PGN', 'err')
       payload.pgn = values.pgn
@@ -130,11 +130,11 @@ export function SubmitModal({ contest, tasks, initialTask, onClose, onJudged }: 
         </select>
       </div>
 
-      {(contest.contest_type === 'leetcode' || contest.ranking_strategy === 'ICPC') && (
+      {contest.contest_type === 'icpc' && (
         <>
           <div className="field">
             <label>Language</label>
-            <select value={values.language_id || 'python'} onChange={(e) => setVal('language_id', e.target.value)}>
+            <select value={values.language || 'python'} onChange={(e) => setVal('language', e.target.value)}>
               <option value="python">Python 3</option>
               <option value="cpp">C++</option>
               <option value="java">Java</option>
@@ -155,7 +155,7 @@ export function SubmitModal({ contest, tasks, initialTask, onClose, onJudged }: 
         }} />
       )}
 
-      {!['leetcode', 'chess'].includes(contest.contest_type) && contest.ranking_strategy !== 'ICPC' && task.submission_schema?.required_keys?.map((k: string) => {
+      {!['icpc', 'chess'].includes(contest.contest_type) && task.submission_schema?.required_keys?.map((k: string) => {
         const numeric = task.submission_schema?.numeric_keys?.includes(k)
         return (
           <div className="field" key={k}>

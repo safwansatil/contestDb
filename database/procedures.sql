@@ -567,6 +567,44 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION create_contest_type_request_native(
+    p_requester_id INT,
+    p_requested_type VARCHAR,
+    p_title VARCHAR,
+    p_rules_description TEXT,
+    p_requested_tasks TEXT DEFAULT NULL
+) RETURNS INT AS $$
+DECLARE v_request_id INT;
+BEGIN
+    INSERT INTO contest_type_requests (requester_id, requested_type, title, rules_description, requested_tasks)
+    VALUES (p_requester_id, p_requested_type, p_title, p_rules_description, p_requested_tasks)
+    RETURNING id INTO v_request_id;
+    RETURN v_request_id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION decide_contest_type_request_native(
+    p_request_id INT,
+    p_developer_id INT,
+    p_decision VARCHAR,
+    p_note TEXT DEFAULT NULL
+) RETURNS VOID AS $$
+BEGIN
+    IF p_decision NOT IN ('APPROVED', 'REJECTED') THEN
+        RAISE EXCEPTION 'Decision must be APPROVED or REJECTED';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM users WHERE id = p_developer_id AND is_developer = TRUE) THEN
+        RAISE EXCEPTION 'Developer access required';
+    END IF;
+    UPDATE contest_type_requests
+    SET status = p_decision, developer_note = p_note, reviewed_by = p_developer_id, reviewed_at = CURRENT_TIMESTAMP
+    WHERE id = p_request_id AND status = 'PENDING';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Request is not pending or does not exist';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
 -- C. Update Contest (Only Hosts & Moderators)
 CREATE OR REPLACE FUNCTION update_contest_native(
     p_contest_id INT,

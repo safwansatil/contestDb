@@ -1,21 +1,27 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
-export type ThemeId = 'guild' | 'sketchbook' | 'geometry'
+export type ThemeId = 'light' | 'dark' | 'cupcake' | 'retro' | 'cyberpunk' | 'valentine' | 'aqua' | 'dracula' | 'night'
 
-export const THEMES: { id: ThemeId; label: string; blurb: string }[] = [
-  { id: 'guild', label: 'Artisanal Guild', blurb: 'Parchment & letterpress' },
-  { id: 'sketchbook', label: 'Playful Sketchbook', blurb: 'Indie zine, hand-drawn' },
-  { id: 'geometry', label: 'Curated Geometry', blurb: 'Premium dark, geometric' },
+export const THEMES: { id: ThemeId; label: string }[] = [
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' },
+  { id: 'cupcake', label: 'Cupcake' },
+  { id: 'retro', label: 'Retro' },
+  { id: 'cyberpunk', label: 'Cyberpunk' },
+  { id: 'valentine', label: 'Valentine' },
+  { id: 'aqua', label: 'Aqua' },
+  { id: 'dracula', label: 'Dracula' },
+  { id: 'night', label: 'Night' },
 ]
 
 const KEY = 'contestdb_theme'
 function initial(): ThemeId {
   const saved = (typeof localStorage !== 'undefined' && localStorage.getItem(KEY)) as ThemeId | null
-  return saved && THEMES.some((t) => t.id === saved) ? saved : 'guild'
+  return saved && THEMES.some((t) => t.id === saved) ? saved : 'cupcake'
 }
 
 interface Ctx { theme: ThemeId; setTheme: (t: ThemeId) => void }
-const ThemeCtx = createContext<Ctx>({ theme: 'guild', setTheme: () => {} })
+const ThemeCtx = createContext<Ctx>({ theme: 'cupcake', setTheme: () => {} })
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<ThemeId>(initial)

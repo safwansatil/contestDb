@@ -1,4 +1,5 @@
 import os
+import os
 import sys
 import asyncio
 import logging
@@ -173,6 +174,23 @@ class AnnouncementCreateRequest(BaseModel):
 
 class KickParticipantRequest(BaseModel):
     reason: Optional[str] = None
+
+class ContestTypeRequestCreate(BaseModel):
+    requested_type: str = Field(..., min_length=3, max_length=80)
+    title: str = Field(..., min_length=3, max_length=120)
+    rules_description: str = Field(..., min_length=10)
+    requested_tasks: Optional[str] = Field(None, max_length=2000)
+
+class ContestTypeRequestDecision(BaseModel):
+    decision: str
+    developer_note: Optional[str] = Field(None, max_length=1000)
+
+    @field_validator("decision")
+    @classmethod
+    def validate_decision(cls, value: str) -> str:
+        if value not in ("APPROVED", "REJECTED"):
+            raise ValueError("Decision must be APPROVED or REJECTED")
+        return value
 
 # Lifecycle Event Handlers
 @app.on_event("startup")
@@ -792,6 +810,31 @@ async def list_users(current_user: Dict[str, Any] = Depends(get_current_user)):
             await cur.execute("SELECT id, username FROM users ORDER BY username ASC;")
             rows = await cur.fetchall()
             return [{"id": r[0], "username": r[1]} for r in rows]
+
+@app.post("/contest-type-requests", status_code=status.HTTP_201_CREATED)
+async def create_contest_type_request(payload: ContestTypeRequestCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("SELECT create_contest_type_request_native(%s, %s, %s, %s, %s);", (
+                    current_user["user_id"], payload.requested_type, payload.title, payload.rules_description, payload.requested_tasks,
+                ))
+                row = await cur.fetchone()
+                await conn.commit()
+                return {"message": "Format request sent to the developer queue", "request_id": row[0]}
+            except Exception as exc:
+                await conn.rollback()
+                raise HTTPException(status_code=400, detail=str(exc))
+
+@app.get("/contest-type-requests/mine")
+async def get_my_contest_type_requests(current_user: Dict[str, Any] = Depends(get_current_user)):
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("""SELECT id, requested_type, title, rules_description, requested_tasks, status, developer_note, created_at, reviewed_at
+                FROM contest_type_requests WHERE requester_id = %s ORDER BY created_at DESC""", (current_user["user_id"],))
+            rows = await cur.fetchall()
+            return [{"id": r[0], "requested_type": r[1], "title": r[2], "rules_description": r[3], "requested_tasks": r[4],
+                     "status": r[5], "developer_note": r[6], "created_at": r[7], "reviewed_at": r[8]} for r in rows]
 
 # Submission Endpoints
 @app.post("/submissions", status_code=status.HTTP_201_CREATED)
@@ -1605,6 +1648,31 @@ async def dev_get_contests(dev_user: Dict[str, Any] = Depends(get_developer_user
                 for r in rows
             ]
 
+@app.get("/dev/contest-type-requests")
+async def dev_get_contest_type_requests(dev_user: Dict[str, Any] = Depends(get_developer_user)):
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("""SELECT r.id, r.requested_type, r.title, r.rules_description, r.requested_tasks, r.status,
+                r.developer_note, r.created_at, u.username FROM contest_type_requests r JOIN users u ON u.id = r.requester_id
+                ORDER BY CASE WHEN r.status = 'PENDING' THEN 0 ELSE 1 END, r.created_at DESC""")
+            rows = await cur.fetchall()
+            return [{"id": r[0], "requested_type": r[1], "title": r[2], "rules_description": r[3], "requested_tasks": r[4],
+                     "status": r[5], "developer_note": r[6], "created_at": r[7], "requester": r[8]} for r in rows]
+
+@app.post("/dev/contest-type-requests/{request_id}/decision")
+async def dev_decide_contest_type_request(request_id: int, payload: ContestTypeRequestDecision, dev_user: Dict[str, Any] = Depends(get_developer_user)):
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("SELECT decide_contest_type_request_native(%s, %s, %s, %s);", (
+                    request_id, dev_user["user_id"], payload.decision, payload.developer_note,
+                ))
+                await conn.commit()
+                return {"message": f"Request {payload.decision.lower()}"}
+            except Exception as exc:
+                await conn.rollback()
+                raise HTTPException(status_code=400, detail=str(exc))
+
 @app.post("/dev/contests/{contest_id}/approve")
 async def dev_approve_contest(contest_id: int, dev_user: Dict[str, Any] = Depends(get_developer_user)):
     """
@@ -1639,62 +1707,3 @@ async def dev_update_task_config(task_id: int, config: DevTaskConfig, dev_user: 
             await conn.commit()
             return {"message": "Task dev config updated successfully"}
 
-# ============================================================
-# Webhook Judges (MVP)
-# ============================================================
-
-class WebhookPayloadRequest(BaseModel):
-    contest_id: str
-    contest_type: str
-    submission_id: str
-    participant_id: str
-    payload: Dict[str, Any]
-
-@app.post("/api/v1/judges/leetcode")
-async def leetcode_judge(request: WebhookPayloadRequest):
-    """
-    Mock LeetCode Webhook Judge
-    """
-    import random
-    execution_time = random.randint(10, 100)
-    code = str(request.payload.get("source_code", ""))
-    
-    if len(code.strip()) == 0:
-        score = 0
-        verdict = "COMPILE_ERROR"
-    elif "print" in code or "cout" in code:
-        score = 100
-        verdict = "ACCEPTED"
-    else:
-        score = 0
-        verdict = "WRONG_ANSWER"
-        
-    return {
-        "submission_id": request.submission_id,
-        "status": verdict,
-        "score": score,
-        "execution_time_ms": execution_time,
-        "feedback": "All test cases passed" if verdict == "ACCEPTED" else "Failed test cases"
-    }
-
-@app.post("/api/v1/judges/chess")
-async def chess_judge(request: WebhookPayloadRequest):
-    """
-    Mock Chess Webhook Judge
-    """
-    import random
-    fen = request.payload.get("fen", "")
-    move = request.payload.get("move", "")
-    
-    # In a real scenario, use python-chess to validate the move.
-    # For MVP, assume it is legal.
-    score = 10  # 10 points per valid move
-    verdict = "ACCEPTED"
-    
-    return {
-        "submission_id": request.submission_id,
-        "status": verdict,
-        "score": score,
-        "execution_time_ms": random.randint(1, 5),
-        "feedback": "Valid move"
-    }

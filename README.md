@@ -6,6 +6,40 @@ This is a generic contest management platform: it can hold, manage, and track an
 
 ---
 
+## Quick start — demo in four terminals
+
+Create `.env` from `.env.example`, put in the three database URLs, and create a virtual environment once with `py -m venv .venv`. Then run these from the project root in four PowerShell terminals:
+
+```powershell
+# Terminal 1 — rebuild the database and seed Sayma, Nondiny, Safwan, and the three demo contests
+.\.venv\Scripts\Activate.ps1
+python database\setup_db.py
+```
+
+```powershell
+# Terminal 2 — API
+.\.venv\Scripts\Activate.ps1
+python backend\run_server.py
+```
+
+```powershell
+# Terminal 3 — start the demo judge in the background, then the queue worker
+.\.venv\Scripts\Activate.ps1
+$root = (Get-Location).Path; Start-Job -ArgumentList $root -ScriptBlock { param($root); Set-Location $root; python backend\demo_judges.py }
+python worker\worker.py
+```
+
+```powershell
+# Terminal 4 — React app
+cd frontend
+npm install
+npm run dev
+```
+
+Open the Vite URL, then sign in with `sayma`, `nondiny`, or `satil` and password `password123`. Sayma hosts ICPC and participates in Chess/CTF; Nondiny's two format requests await Safwan (`satil`) in the Developer Console.
+
+---
+
 ##  Project Architecture & Layout
 
 The project implements a **Thin-Tier Architecture**:

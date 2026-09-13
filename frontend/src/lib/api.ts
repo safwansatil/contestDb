@@ -49,6 +49,11 @@ export interface LeaderRow { user_id: number; username: string; total_score: num
 export interface Announcement { id: number; title: string; body: string; author: string; posted_at: string }
 export interface Member { user_id: number; username: string; role: Role }
 export interface User { id: number; username: string; is_developer?: boolean }
+export interface ContestTypeRequest {
+  id: number; requested_type: string; title: string; rules_description: string
+  requested_tasks?: string | null; status: 'PENDING' | 'APPROVED' | 'REJECTED'
+  developer_note?: string | null; created_at: string; reviewed_at?: string | null; requester?: string
+}
 
 /* ---------- Auth ---------- */
 export const authApi = {
@@ -83,6 +88,11 @@ export const contestApi = {
   setVisibility: (id: number, v: Visibility) => api.put(`/contests/${id}/visibility`, v).then(r => r.data),
 }
 
+export const formatRequestApi = {
+  mine: () => api.get('/contest-type-requests/mine').then(r => r.data as ContestTypeRequest[]),
+  create: (body: Record<string, unknown>) => api.post('/contest-type-requests', body).then(r => r.data),
+}
+
 /* ---------- Submissions ---------- */
 export const submissionApi = {
   create: (contest_id: number, task_id: number, submission_data: Record<string, unknown>) =>
@@ -102,6 +112,9 @@ export const devApi = {
   contests: () => api.get('/dev/contests').then(r => r.data as Contest[]),
   approve: (id: number) => api.post(`/dev/contests/${id}/approve`).then(r => r.data),
   updateTaskConfig: (taskId: number, webhook_url: string | null, submission_schema: Record<string, unknown>) => 
-    api.put(`/dev/tasks/${taskId}/config`, { webhook_url, submission_schema }).then(r => r.data)
+    api.put(`/dev/tasks/${taskId}/config`, { webhook_url, submission_schema }).then(r => r.data),
+  formatRequests: () => api.get('/dev/contest-type-requests').then(r => r.data as ContestTypeRequest[]),
+  decideFormatRequest: (id: number, decision: 'APPROVED' | 'REJECTED', developer_note?: string) =>
+    api.post(`/dev/contest-type-requests/${id}/decision`, { decision, developer_note: developer_note || null }).then(r => r.data),
 }
 

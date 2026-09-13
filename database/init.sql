@@ -227,6 +227,22 @@ CREATE TABLE IF NOT EXISTS contest_announcements (
     posted_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
+-- A host can request a new/customized format before a real contest exists.
+CREATE TABLE IF NOT EXISTS contest_type_requests (
+    id                SERIAL PRIMARY KEY,
+    requester_id      INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    requested_type    VARCHAR(80) NOT NULL,
+    title             VARCHAR(120) NOT NULL,
+    rules_description TEXT NOT NULL,
+    requested_tasks   TEXT,
+    status            VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    developer_note    TEXT,
+    reviewed_by       INT REFERENCES users(id) ON DELETE SET NULL,
+    created_at        TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    reviewed_at       TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT chk_format_request_status CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED'))
+);
+
 -- Indices for faster lookups and queuing
 CREATE INDEX IF NOT EXISTS idx_submissions_queue       ON submissions(submitted_at ASC) WHERE status = 'PENDING';
 CREATE INDEX IF NOT EXISTS idx_submissions_contest     ON submissions(contest_id);
@@ -239,6 +255,7 @@ CREATE INDEX IF NOT EXISTS idx_submissions_contest_time ON submissions(contest_i
 CREATE INDEX IF NOT EXISTS idx_tasks_order             ON tasks(contest_id, task_order ASC);
 CREATE INDEX IF NOT EXISTS idx_kick_log_contest        ON kick_log(contest_id, kicked_user_id);
 CREATE INDEX IF NOT EXISTS idx_announcements_contest   ON contest_announcements(contest_id, posted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_format_requests_status  ON contest_type_requests(status, created_at DESC);
 
 -- Trigram index for user search (v0.6.0)
 CREATE INDEX IF NOT EXISTS idx_users_username_trgm     ON users USING gin (username gin_trgm_ops);
