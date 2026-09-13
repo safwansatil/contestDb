@@ -73,6 +73,9 @@ export function ContestDetail() {
       }
       return { label: '✓ Enrolled', fn: () => {}, disabled: true }
     }
+    if (c!.status === 'REJECTED') return { label: 'Contest rejected', fn: () => {}, disabled: true }
+    if (c!.status === 'CANCELLED') return { label: 'Contest cancelled', fn: () => {}, disabled: true }
+    if (c!.status === 'PENDING_APPROVAL') return { label: 'Awaiting approval', fn: () => {}, disabled: true }
     if (tstat === 'COMPLETED') return { label: 'Contest ended', fn: () => {}, disabled: true }
     if (tstat === 'ONGOING' && !c!.allow_late_enrollment) return { label: 'Enrollment closed', fn: () => {}, disabled: true }
     return { label: c!.requires_invitation_code ? '🔒 Enroll with code' : '＋ Enroll', fn: () => setEnrolling(true) }
@@ -112,7 +115,7 @@ export function ContestDetail() {
         </div>
 
         {c.status === 'PENDING_APPROVAL' && admin &&
-          <div className="notice" style={{ margin: '16px 0' }}>⏳ Awaiting developer approval — a terminal-only action: <span className="k">SELECT approve_contest_native({c.id});</span></div>}
+          <div className="notice" style={{ margin: '16px 0' }}>Awaiting developer review. The developer can approve or reject this contest from the control room.</div>}
 
         {/* Tabs */}
         <div className="tabs">
@@ -368,8 +371,8 @@ function IcpcArena({ contest, tasks, canSubmit, admin, onAddTask }: { contest: C
     </main>
     <section className="editor-pane">
       <div className="editor-toolbar"><div className="file-tab"><span className="file-dot" />solution.{language === 'python' ? 'py' : language === 'cpp' ? 'cpp' : 'java'}</div><select aria-label="Language" value={language} onChange={(e) => changeLanguage(e.target.value)}><option value="python">Python 3</option><option value="cpp">C++17</option><option value="java">Java 21</option></select></div>
-      <div className="editor-wrap"><div className="line-numbers">{Array.from({ length: Math.max(12, code.split('\n').length) }, (_, i) => <span key={i}>{i + 1}</span>)}</div><textarea aria-label="Solution editor" value={code} onChange={(e) => { setCode(e.target.value); setStatus('idle') }} spellCheck={false} /></div>
-      <div className="editor-footer"><span className={`judge-state ${status === 'queued' ? 'queued' : ''}`}>{status === 'queued' ? '● Queued for judging' : '● Ready to submit'}</span><div className="row"><button className="btn ghost sm" onClick={() => setCode(CODE_TEMPLATES[language])}>Reset</button><button className="btn primary" onClick={submitCode}>Submit solution →</button></div></div>
+      <div className="editor-wrap"><div className="line-numbers">{Array.from({ length: Math.max(12, code.split('\n').length) }, (_, i) => <span key={i}>{i + 1}</span>)}</div><textarea aria-label="Solution editor" value={code} onChange={(e) => { setCode(e.target.value); setStatus('idle') }} disabled={!canSubmit} spellCheck={false} /></div>
+      <div className="editor-footer"><span className={`judge-state ${status === 'queued' ? 'queued' : ''}`}>{status === 'queued' ? '● Queued for judging' : canSubmit ? '● Ready to submit' : '● Participant access required'}</span><div className="row"><button className="btn ghost sm" disabled={!canSubmit} onClick={() => setCode(CODE_TEMPLATES[language])}>Reset</button><button className="btn primary" disabled={!canSubmit || status === 'queued'} onClick={submitCode}>Submit solution →</button></div></div>
     </section>
   </div>
 }
@@ -493,7 +496,8 @@ function ChessLevel({
           options={{
             position: game.fen(),
             onPieceDrop: onDrop,
-            boardOrientation: 'white'
+            boardOrientation: 'white',
+            allowDragging: canSubmit && !sent
           }}
         />
 </div>
@@ -522,7 +526,7 @@ function ChessLevel({
 
           <button
             className="btn primary sm"
-            disabled={sent}
+            disabled={!canSubmit || sent}
             onClick={submitChess}
           >
             {sent ? 'Submitted' : 'Submit'}
@@ -565,7 +569,7 @@ function CtfChallenge({ contest, task, canSubmit }: { contest: Contest; task: Ta
   const brief = CTF_BRIEFS[task.task_order] || { category: 'General', time: '5 min', mission: task.description, evidence: 'No extra evidence supplied.', hint: 'Read the task statement closely.' }
   async function waitForVerdict(submissionId: number) { for (let i = 0; i < 15; i++) { await new Promise((resolve) => setTimeout(resolve, 1200)); try { const history = await userApi.history(user!.id); const found = history.submissions_history.find((item: { submission_id: number; verdict: string | null }) => item.submission_id === submissionId); if (found?.verdict) { const correct = found.verdict === 'CORRECT'; setPhase(correct ? 'correct' : 'wrong'); toast(correct ? `${task.title} solved — ${task.max_score} points` : 'Not this flag. Review the evidence and try again after the cooldown.', correct ? 'info' : 'err'); return } } catch { /* worker may still be processing */ } } setPhase('ready'); toast('Judging is taking longer than expected. Check your profile shortly.', 'info') }
   async function submitFlag() { if (!/^CTFDB\{.+\}$/.test(flag.trim())) return toast('Use the exact CTFDB{...} flag format.', 'err'); if (!canSubmit) return toast('Enroll or wait for the contest to become active.', 'err'); setPhase('queued'); try { const result = await submissionApi.create(contest.id, task.id, { flag: flag.trim() }); toast(`${task.title} entered the judge queue`, 'info'); await waitForVerdict(result.submission_id) } catch (e) { setPhase('ready'); toast(apiError(e), 'err') } }
-  const locked = phase === 'queued' || phase === 'correct'
+  const locked = !canSubmit || phase === 'queued' || phase === 'correct'
   return <article className={`ctf-card ${phase === 'correct' ? 'solved' : ''}`}><header><span className="ctf-number">{String(task.task_order).padStart(2, '0')}</span><div><span className="label">{brief.category} / easy</span><h3>{task.title}</h3></div><strong>{task.max_score}<small>pts</small></strong></header><div className="ctf-brief"><span className="label">Mission</span><p>{brief.mission}</p><span className="label">Evidence</span><pre>{brief.evidence}</pre><div className="ctf-meta"><span>EST. {brief.time}</span><span>20 SEC COOLDOWN</span></div><details><summary>Need a hint?</summary><p>{brief.hint}</p></details></div><div className="ctf-submit"><label htmlFor={`flag-${task.id}`}>{phase === 'correct' ? '✓ Flag accepted' : phase === 'queued' ? 'Judging your flag…' : phase === 'wrong' ? 'Try another flag' : 'Flag submission'}</label><div><input id={`flag-${task.id}`} value={flag} onChange={(e) => { setFlag(e.target.value); if (phase === 'wrong') setPhase('ready') }} placeholder="CTFDB{...}" disabled={locked} spellCheck={false} /><button className="btn primary" disabled={locked} onClick={submitFlag}>{phase === 'queued' ? 'Judging' : phase === 'correct' ? 'Solved' : 'Submit'}</button></div></div></article>
 }
 

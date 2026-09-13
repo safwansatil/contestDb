@@ -27,9 +27,9 @@ export function ThemeSwitcher() {
           setTheme(event.target.value as ThemeId)
         }
       >
-        {THEMES.map(([id, label, icon]) => (
+        {THEMES.map(([id, label]) => (
           <option key={id} value={id}>
-            {icon} {label}
+            {label}
           </option>
         ))}
       </select>

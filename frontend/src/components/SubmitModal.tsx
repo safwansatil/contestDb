@@ -155,7 +155,7 @@ export function SubmitModal({ contest, tasks, initialTask, onClose, onJudged }: 
         }} />
       )}
 
-      {!['icpc', 'chess'].includes(contest.contest_type) && task.submission_schema?.required_keys?.map((k: string) => {
+      {!['icpc', 'chess'].includes(contest.contest_type ?? 'custom') && task.submission_schema?.required_keys?.map((k: string) => {
         const numeric = task.submission_schema?.numeric_keys?.includes(k)
         return (
           <div className="field" key={k}>

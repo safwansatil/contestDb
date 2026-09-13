@@ -58,9 +58,6 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
             {isLogin ? 'Sign up' : 'Sign in'}
           </Link>
         </div>
-        <div className="notice blue center" style={{ marginTop: 20, justifyContent: 'center' }}>
-          Try the seed account <span className="k">sayma</span> / <span className="k">password123</span>
-        </div>
       </motion.form></div>
     </div>
   )

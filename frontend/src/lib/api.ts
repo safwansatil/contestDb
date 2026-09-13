@@ -24,7 +24,7 @@ export function apiError(e: unknown): string {
 
 /* ---------- Types (mirror the API response shapes) ---------- */
 export type Role = 'HOST' | 'MODERATOR' | 'PARTICIPANT' | null
-export type ContestStatus = 'PENDING_APPROVAL' | 'ACTIVE' | 'COMPLETED'
+export type ContestStatus = 'PENDING_APPROVAL' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'REJECTED'
 
 export interface Visibility {
   show_participant_count: boolean; show_leaderboard: boolean; show_member_list: boolean
@@ -128,6 +128,8 @@ export const userApi = {
 export const devApi = {
   contests: () => api.get('/dev/contests').then(r => r.data as Contest[]),
   approve: (id: number) => api.post(`/dev/contests/${id}/approve`).then(r => r.data),
+  reject: (id: number) => api.post(`/dev/contests/${id}/reject`).then(r => r.data),
+  cancel: (id: number) => api.post(`/dev/contests/${id}/cancel`).then(r => r.data),
   updateTaskConfig: (taskId: number, webhook_url: string | null, submission_schema: Record<string, unknown>) => 
     api.put(`/dev/tasks/${taskId}/config`, { webhook_url, submission_schema }).then(r => r.data),
   formatRequests: () => api.get('/dev/contest-type-requests').then(r => r.data as ContestTypeRequest[]),

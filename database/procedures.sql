@@ -201,7 +201,9 @@ BEGIN
             FROM enrollments e
             JOIN users u ON e.user_id = u.id
             LEFT JOIN user_best_scores ubs ON e.user_id = ubs.user_id
-            WHERE e.contest_id = p_contest_id;
+            WHERE e.contest_id = p_contest_id
+              AND e.role = 'PARTICIPANT'
+            ORDER BY COALESCE(ubs.best_score, 0) DESC, u.username ASC;
         ELSE
             -- SUM strategy with tasks: sum of the user's best score on each task
             RETURN QUERY
@@ -232,7 +234,9 @@ BEGIN
             FROM enrollments e
             JOIN users u ON e.user_id = u.id
             LEFT JOIN user_sum_scores uss ON e.user_id = uss.user_id
-            WHERE e.contest_id = p_contest_id;
+            WHERE e.contest_id = p_contest_id
+              AND e.role = 'PARTICIPANT'
+            ORDER BY COALESCE(uss.sum_score, 0) DESC, u.username ASC;
         END IF;
     ELSE
         -- Fallback to old behavior if no tasks exist (task-less contests)
@@ -257,7 +261,9 @@ BEGIN
             FROM enrollments e
             JOIN users u ON e.user_id = u.id
             LEFT JOIN user_best_scores ubs ON e.user_id = ubs.user_id
-            WHERE e.contest_id = p_contest_id;
+            WHERE e.contest_id = p_contest_id
+              AND e.role = 'PARTICIPANT'
+            ORDER BY COALESCE(ubs.best_score, 0) DESC, u.username ASC;
 
         ELSE -- Default strategy: 'SUM'
             RETURN QUERY
@@ -280,7 +286,9 @@ BEGIN
             FROM enrollments e
             JOIN users u ON e.user_id = u.id
             LEFT JOIN user_sum_scores uss ON e.user_id = uss.user_id
-            WHERE e.contest_id = p_contest_id;
+            WHERE e.contest_id = p_contest_id
+              AND e.role = 'PARTICIPANT'
+            ORDER BY COALESCE(uss.sum_score, 0) DESC, u.username ASC;
         END IF;
     END IF;
 END;
@@ -523,7 +531,23 @@ DROP FUNCTION IF EXISTS create_contest_native(
     TEXT,
     INT,
     INT,
+    INT,
     BOOLEAN
+);
+DROP FUNCTION IF EXISTS create_contest_native(
+    VARCHAR,
+    VARCHAR,
+    TIMESTAMP WITH TIME ZONE,
+    TIMESTAMP WITH TIME ZONE,
+    TIMESTAMP WITH TIME ZONE,
+    VARCHAR,
+    TEXT,
+    INT,
+    INT,
+    INT,
+    BOOLEAN,
+    VARCHAR,
+    VARCHAR
 );
 CREATE OR REPLACE FUNCTION create_contest_native(
     p_title VARCHAR,
@@ -536,7 +560,9 @@ CREATE OR REPLACE FUNCTION create_contest_native(
     p_creator_id INT,
     p_max_participants INT DEFAULT NULL,
     p_max_moderators INT DEFAULT 0,
-    p_allow_late_enrollment BOOLEAN DEFAULT TRUE
+    p_allow_late_enrollment BOOLEAN DEFAULT TRUE,
+    p_contest_type VARCHAR DEFAULT 'custom',
+    p_judge_webhook_url VARCHAR DEFAULT NULL
 ) RETURNS INT AS $$
 DECLARE
     v_contest_id INT;
@@ -557,7 +583,9 @@ BEGIN
         status,
         max_participants,
         max_moderators,
-        allow_late_enrollment
+        allow_late_enrollment,
+        contest_type,
+        judge_webhook_url
     )
     VALUES (
         p_title,
@@ -570,7 +598,9 @@ BEGIN
         'PENDING_APPROVAL',
         p_max_participants,
         p_max_moderators,
-        p_allow_late_enrollment
+        p_allow_late_enrollment,
+        p_contest_type,
+        p_judge_webhook_url
     )
     RETURNING id INTO v_contest_id;
 
@@ -604,6 +634,60 @@ BEGIN
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Contest not found';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- C. Reject a pending contest (Developer operation)
+CREATE OR REPLACE FUNCTION reject_contest_native(
+    p_contest_id INT,
+    p_developer_id INT
+) RETURNS VOID AS $$
+DECLARE
+    v_is_developer BOOLEAN;
+BEGIN
+    SELECT is_developer INTO v_is_developer
+    FROM users
+    WHERE id = p_developer_id;
+
+    IF NOT COALESCE(v_is_developer, FALSE) THEN
+        RAISE EXCEPTION 'Developer access required';
+    END IF;
+
+    UPDATE contests
+    SET status = 'REJECTED'
+    WHERE id = p_contest_id
+      AND status = 'PENDING_APPROVAL';
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Only pending contests can be rejected';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- D. Cancel an active contest (Developer operation)
+CREATE OR REPLACE FUNCTION cancel_contest_native(
+    p_contest_id INT,
+    p_developer_id INT
+) RETURNS VOID AS $$
+DECLARE
+    v_is_developer BOOLEAN;
+BEGIN
+    SELECT is_developer INTO v_is_developer
+    FROM users
+    WHERE id = p_developer_id;
+
+    IF NOT COALESCE(v_is_developer, FALSE) THEN
+        RAISE EXCEPTION 'Developer access required';
+    END IF;
+
+    UPDATE contests
+    SET status = 'CANCELLED'
+    WHERE id = p_contest_id
+      AND status = 'ACTIVE';
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Only active contests can be cancelled';
     END IF;
 END;
 $$ LANGUAGE plpgsql;
@@ -1010,9 +1094,11 @@ BEGIN
         RAISE EXCEPTION 'Contest not found';
     END IF;
 
-    -- 3. Block enrollment in unapproved contests
+    -- 3. Only active contests accept new participants
     IF v_status = 'PENDING_APPROVAL' THEN
         RAISE EXCEPTION 'This contest is pending developer approval';
+    ELSIF v_status <> 'ACTIVE' THEN
+        RAISE EXCEPTION 'This contest is not accepting enrollments';
     END IF;
 
     -- 4. Block late enrollment if disabled and contest has already started

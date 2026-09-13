@@ -38,9 +38,9 @@ CREATE TABLE IF NOT EXISTS contests (
     max_moderators INT DEFAULT 0 NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT chk_max_moderators
-    CHECK (max_moderators >= 0)
+    CHECK (max_moderators >= 0),
     CONSTRAINT chk_contest_times CHECK (freeze_time >= start_time AND end_time >= freeze_time),
-    CONSTRAINT chk_contest_status CHECK (status IN ('PENDING_APPROVAL', 'ACTIVE', 'COMPLETED')),
+    CONSTRAINT chk_contest_status CHECK (status IN ('PENDING_APPROVAL', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED')),
     CONSTRAINT chk_max_participants CHECK (max_participants IS NULL OR max_participants > 0)
 );
 
@@ -54,7 +54,7 @@ ALTER TABLE contests ADD COLUMN IF NOT EXISTS contest_type VARCHAR(50) DEFAULT '
 ALTER TABLE contests ADD COLUMN IF NOT EXISTS judge_webhook_url VARCHAR(255);
 ALTER TABLE contests ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
 ALTER TABLE contests DROP CONSTRAINT IF EXISTS chk_contest_status;
-ALTER TABLE contests ADD CONSTRAINT chk_contest_status CHECK (status IN ('PENDING_APPROVAL', 'ACTIVE', 'COMPLETED'));
+ALTER TABLE contests ADD CONSTRAINT chk_contest_status CHECK (status IN ('PENDING_APPROVAL', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'));
 ALTER TABLE contests DROP CONSTRAINT IF EXISTS chk_max_participants;
 ALTER TABLE contests ADD CONSTRAINT chk_max_participants CHECK (max_participants IS NULL OR max_participants > 0);
 ALTER TABLE contests

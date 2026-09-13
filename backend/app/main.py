@@ -1,5 +1,4 @@
 import os
-import os
 import sys
 import asyncio
 import logging
@@ -152,6 +151,8 @@ class ContestCreateRequest(BaseModel):
         description="Maximum number of moderators, excluding the host."
     )
     allow_late_enrollment: bool = True
+    contest_type: str = Field("custom", min_length=1, max_length=50)
+    judge_webhook_url: Optional[str] = Field(None, max_length=255)
 class TaskCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1)
@@ -433,7 +434,9 @@ c.allow_late_enrollment,
     show_ml,
     show_tl,
     show_st,
-    show_sc
+    show_sc,
+    contest_type,
+    webhook_url
 ) = row
             has_code = inv_code is not None and inv_code != ""
             is_admin = role in ("HOST", "MODERATOR")
@@ -475,7 +478,7 @@ async def create_contest(payload: ContestCreateRequest, current_user: Dict[str, 
         async with conn.cursor() as cur:
             try:
                 await cur.execute(
-                    "SELECT create_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                    "SELECT create_contest_native(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                     (
                         payload.title,
                         payload.ranking_strategy,
@@ -486,6 +489,7 @@ async def create_contest(payload: ContestCreateRequest, current_user: Dict[str, 
                         payload.judging_description,
                         creator_id,
                         payload.max_participants,
+                        payload.max_moderators,
                         payload.allow_late_enrollment,
                         payload.contest_type,
                         payload.judge_webhook_url
@@ -500,12 +504,7 @@ async def create_contest(payload: ContestCreateRequest, current_user: Dict[str, 
                 raise HTTPException(status_code=400, detail=str(e))
 
 
-# NOTE: Contest approval is intentionally NOT exposed as an API endpoint.
-# To approve a pending contest, connect to the database directly and run:
-#   SELECT approve_contest_native(<contest_id>);
-# or:
-#   UPDATE contests SET status = 'ACTIVE' WHERE id = <contest_id>;
-# This is a deliberate design choice — approval is a developer/admin terminal action only.
+# Contest approval and cancellation are exposed only through developer-protected endpoints.
 
 @app.put("/contests/{contest_id}")
 async def update_contest(contest_id: int, payload: ContestCreateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -1840,7 +1839,7 @@ async def dev_get_contests(dev_user: Dict[str, Any] = Depends(get_developer_user
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                SELECT id, title, ranking_strategy, status, start_time, end_time, created_at 
+                SELECT id, title, ranking_strategy, contest_type, status, start_time, end_time, created_at
                 FROM contests 
                 ORDER BY created_at DESC
                 """
@@ -1848,8 +1847,8 @@ async def dev_get_contests(dev_user: Dict[str, Any] = Depends(get_developer_user
             rows = await cur.fetchall()
             return [
                 {
-                    "id": r[0], "title": r[1], "ranking_strategy": r[2], 
-                    "status": r[3], "start_time": r[4], "end_time": r[5], "created_at": r[6]
+                    "id": r[0], "title": r[1], "ranking_strategy": r[2], "contest_type": r[3],
+                    "status": r[4], "start_time": r[5], "end_time": r[6], "created_at": r[7]
                 }
                 for r in rows
             ]
@@ -1895,6 +1894,38 @@ async def dev_approve_contest(contest_id: int, dev_user: Dict[str, Any] = Depend
                 raise HTTPException(status_code=400, detail="Contest is not pending approval or does not exist")
             await conn.commit()
             return {"message": "Contest approved and is now ACTIVE"}
+
+@app.post("/dev/contests/{contest_id}/reject")
+async def dev_reject_contest(contest_id: int, dev_user: Dict[str, Any] = Depends(get_developer_user)):
+    """Developer action to reject a contest that is still awaiting approval."""
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT reject_contest_native(%s, %s);",
+                    (contest_id, dev_user["user_id"]),
+                )
+                await conn.commit()
+                return {"message": "Contest rejected"}
+            except Exception as exc:
+                await conn.rollback()
+                raise HTTPException(status_code=400, detail=str(exc))
+
+@app.post("/dev/contests/{contest_id}/cancel")
+async def dev_cancel_contest(contest_id: int, dev_user: Dict[str, Any] = Depends(get_developer_user)):
+    """Developer action to cancel an active contest without deleting its record."""
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    "SELECT cancel_contest_native(%s, %s);",
+                    (contest_id, dev_user["user_id"]),
+                )
+                await conn.commit()
+                return {"message": "Contest cancelled"}
+            except Exception as exc:
+                await conn.rollback()
+                raise HTTPException(status_code=400, detail=str(exc))
 
 @app.put("/dev/tasks/{task_id}/config")
 async def dev_update_task_config(task_id: int, config: DevTaskConfig, dev_user: Dict[str, Any] = Depends(get_developer_user)):

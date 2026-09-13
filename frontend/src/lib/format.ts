@@ -28,7 +28,7 @@ export function isFrozen(c: Contest, now = Date.now()): boolean {
 }
 
 export function statusColor(s: string): string {
-  return { ACTIVE: 'var(--ac)', PENDING_APPROVAL: 'var(--tle)', COMPLETED: 'var(--ink-faint)' }[s] || 'var(--ink-faint)'
+  return { ACTIVE: 'var(--ac)', PENDING_APPROVAL: 'var(--tle)', COMPLETED: 'var(--ink-faint)', CANCELLED: 'var(--wa)', REJECTED: 'var(--wa)' }[s] || 'var(--ink-faint)'
 }
 
 export function verdictClass(v: string): string {

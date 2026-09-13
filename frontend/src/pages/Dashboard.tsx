@@ -86,7 +86,7 @@ export function Dashboard() {
     () =>
       (contests ?? []).filter(
         (contest) =>
-          contest.status !== 'PENDING_APPROVAL'
+          (contest.status !== 'PENDING_APPROVAL' && contest.status !== 'REJECTED')
           || contest.user_role === 'HOST'
           || contest.user_role === 'MODERATOR',
       ),
